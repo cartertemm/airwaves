@@ -8,7 +8,7 @@ All scripts need Python 3.10 or later and use only the standard library. There i
 
 Here is a list of the available scripts:
 
-| Script | Source | What it does |
+| Script | Source | Purpose |
 | --- | --- | --- |
 | `radiolocator.py` | radio-locator.com | Lists AM and FM stations near a zip code with distance, signal strength, and format. Shows full details for one call sign. |
 | `zipsignal.py` | V-Soft ZipSignal | Lists AM and FM stations whose signal covers a zip code. |
