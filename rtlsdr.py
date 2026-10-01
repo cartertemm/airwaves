@@ -156,16 +156,15 @@ class AudioBuffer:
 			while self.frames > MAX_BUFFER_FRAMES:
 				self.frames -= len(self.chunks.popleft())
 
-	def fade_out(self, count):
-		ramp = np.linspace(1, 0, count, dtype=np.float32)
-		remaining = count
+	def cut(self, count):
+		"""Fades the next count frames to silence and replaces the rest with silence, so the buffer holds exactly PREFILL_FRAMES."""
+		kept = np.zeros((PREFILL_FRAMES, 2), dtype=np.float32)
 		with self.lock:
-			for chunk in reversed(self.chunks):
-				faded = min(remaining, len(chunk))
-				chunk[len(chunk) - faded:] *= ramp[remaining - faded:remaining, None]
-				remaining -= faded
-				if remaining == 0:
-					break
+			if self.chunks:
+				old = np.concatenate(self.chunks)[:count]
+				kept[:len(old)] = old * np.linspace(1, 0, len(old), dtype=np.float32)[:, None]
+			self.chunks = collections.deque([kept])
+			self.frames = PREFILL_FRAMES
 
 	def get(self, count):
 		out = np.zeros((count, 2), dtype=np.float32)
@@ -253,7 +252,7 @@ class Receiver:
 			audio = self.demodulator.process(self.sdr.packed_bytes_to_iq(raw)).astype(np.float32)
 			if tune_count != self.played_tune_count:
 				self.played_tune_count = tune_count
-				self.buffer.fade_out(FADE_FRAMES)
+				self.buffer.cut(FADE_FRAMES)
 				audio[:len(self.fade_in)] *= self.fade_in
 			if self.demodulator.stereo != self.stereo_shown:
 				self.stereo_shown = self.demodulator.stereo
