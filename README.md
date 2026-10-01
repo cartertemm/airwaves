@@ -4,6 +4,8 @@ A set of CLI based utilities having to do with discovering nearby radio stations
 
 These were mostly written a few years ago (before the GenAI era). I have continued maintaining them because I have found them useful. I hope someone else does so too!
 
+Please note that some of these services (radio locator for instance) impose IP-based rate limits. Not all of them are documented. It is important to do your own A/B testing and be mindful of this so you don't encounter them in an application.
+
 All scripts need Python 3.10 or later and use only the standard library. There is nothing to install.
 
 Here is a list of the available scripts:
