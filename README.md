@@ -6,7 +6,7 @@ These were mostly written a few years ago (before the GenAI era). I have continu
 
 Please note that some of these services (radio locator for instance) impose IP-based rate limits. Not all of them are documented. It is important to do your own A/B testing and be mindful of this so you don't encounter them in an application.
 
-All scripts need Python 3.10 or later and use only the standard library. There is nothing to install.
+All scripts need Python 3.10 or later. All scripts except `rtlsdr.py` use only the standard library.
 
 Here is a list of the available scripts:
 
@@ -18,6 +18,7 @@ Here is a list of the available scripts:
 | `iheart.py` | iHeartRadio | Searches iHeartRadio stations and prints their stream URLs. |
 | `streema.py` | Streema | Prints the direct stream URL for a call sign. |
 | `broadcastify.py` | Broadcastify | Searches scanner feeds (fire, police, weather, and more) and prints their stream URLs. |
+| `rtlsdr.py` | RTL-SDR dongle | Plays FM stereo radio from an RTL-SDR USB dongle. |
 
 If you run a script with no arguments, it asks you for input.
 
@@ -79,3 +80,33 @@ Then get the stream URL with the feed ID or the feed name:
 ```
 python broadcastify.py --stream 20973
 ```
+
+## Listening to FM radio with an RTL-SDR dongle
+
+You can use `rtlsdr.py`. It needs some packages:
+
+```
+pip install numpy scipy pyaudio pyrtlsdr pyrtlsdrlib
+```
+
+Give a frequency in MHz, or give no frequency to start at 87.5 MHz:
+
+```
+python rtlsdr.py 97.9
+python rtlsdr.py
+```
+
+If you have more than one dongle, the script asks you to choose one.
+
+| Key | Action |
+| --- | --- |
+| Space | Play or pause |
+| `_` | Volume down |
+| `+` | Volume up |
+| `s` | Go back 0.1 MHz |
+| `w` | Go forward 0.1 MHz |
+| `t` | Type a frequency in MHz |
+| `m` | Mute or unmute |
+| Ctrl+C | Quit |
+
+The keys work on Windows only.
