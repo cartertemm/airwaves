@@ -3,11 +3,13 @@ import collections
 import ctypes
 import locale
 import queue
+import re
 import shutil
 import sys
 import threading
 import time
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pyaudio
@@ -59,6 +61,40 @@ RDS_OFFSETS = ((0x0FC,), (0x198,), (0x168, 0x350), (0x1B4,))
 RDS_SYNC_LOSS_BLOCKS = 10
 RDS_NAME_LENGTH = 8
 RDS_TEXT_END = "\r"
+# SAME alert headers on NOAA weather radio: frequency shift keying at 520.83 bits per second.
+SAME_BAUD = 520 + 5 / 6
+SAME_MARK = 4 * SAME_BAUD
+SAME_SPACE = 3 * SAME_BAUD
+SAME_DECIMATION = 4
+SAME_PLL_GAIN = 0.2
+# "ZCZC" with the bytes in the order they arrive, least significant bit first.
+SAME_START = 0x435A435A
+SAME_MAX_LENGTH = 268
+SAME_HEADER = re.compile(r"ZCZC-([A-Z]{3})-([A-Z]{3})-(\d{6}(?:-\d{6})*)\+(\d{2})(\d{2})-(\d{3})(\d{2})(\d{2})-([^-]{1,8})-")
+SAME_EVENTS = {
+	"ADR": "Administrative Message", "AVA": "Avalanche Watch", "AVW": "Avalanche Warning", "BLU": "Blue Alert",
+	"BZW": "Blizzard Warning", "CAE": "Child Abduction Emergency", "CDW": "Civil Danger Warning", "CEM": "Civil Emergency Message",
+	"CFA": "Coastal Flood Watch", "CFW": "Coastal Flood Warning", "DMO": "Practice/Demo Warning", "DSW": "Dust Storm Warning",
+	"EAN": "Emergency Action Notification", "EQW": "Earthquake Warning", "EVI": "Evacuation Immediate", "EWW": "Extreme Wind Warning",
+	"FFA": "Flash Flood Watch", "FFS": "Flash Flood Statement", "FFW": "Flash Flood Warning", "FLA": "Flood Watch",
+	"FLS": "Flood Statement", "FLW": "Flood Warning", "FRW": "Fire Warning", "HLS": "Hurricane Local Statement",
+	"HMW": "Hazardous Materials Warning", "HUA": "Hurricane Watch", "HUW": "Hurricane Warning", "HWA": "High Wind Watch",
+	"HWW": "High Wind Warning", "LAE": "Local Area Emergency", "LEW": "Law Enforcement Warning", "NIC": "National Information Center",
+	"NMN": "Network Message Notification", "NPT": "National Periodic Test", "NUW": "Nuclear Power Plant Warning", "RHW": "Radiological Hazard Warning",
+	"RMT": "Required Monthly Test", "RWT": "Required Weekly Test", "SMW": "Special Marine Warning", "SPS": "Special Weather Statement",
+	"SPW": "Shelter in Place Warning", "SQW": "Snow Squall Warning", "SSA": "Storm Surge Watch", "SSW": "Storm Surge Warning",
+	"SVA": "Severe Thunderstorm Watch", "SVR": "Severe Thunderstorm Warning", "SVS": "Severe Weather Statement", "TOA": "Tornado Watch",
+	"TOE": "911 Telephone Outage Emergency", "TOR": "Tornado Warning", "TRA": "Tropical Storm Watch", "TRW": "Tropical Storm Warning",
+	"TSA": "Tsunami Watch", "TSW": "Tsunami Warning", "VOW": "Volcano Warning", "WSA": "Winter Storm Watch", "WSW": "Winter Storm Warning",
+}
+ALARM_FREQ = 1050
+# The share of the audio power that must be at the alarm frequency.
+ALARM_RATIO = 0.6
+ALARM_SECONDS = 1
+# A tone this soon after a SAME header belongs to that header's alert.
+ALARM_AFTER_HEADER_SECONDS = 30
+# A tone has no end time, so show its alert for this long.
+ALARM_SHOW_MINUTES = 10
 # The dongle delivers audio in bursts, so hold some back to keep the sound card fed between bursts.
 PREFILL_FRAMES = AUDIO_RATE // 4
 MAX_BUFFER_FRAMES = AUDIO_RATE
@@ -105,6 +141,8 @@ class Band:
 	# Bands below the tuner's range feed the antenna straight to the dongle's converter.
 	direct_sampling: bool = False
 	khz: bool = False
+	# Weather radio carries SAME alert headers and the 1050 Hz alarm tone.
+	alerts: bool = False
 
 	def format(self, freq_mhz):
 		return f"{freq_mhz * 1000:.0f} kHz" if self.khz else f"{freq_mhz:.{self.digits}f} MHz"
@@ -116,7 +154,7 @@ class Band:
 
 
 FM = Band(min_mhz=87.5, max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6)
-NOAA = Band(min_mhz=162.4, max_mhz=162.55, step_mhz=0.025, digits=3, max_deviation=5000, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None)
+NOAA = Band(min_mhz=162.4, max_mhz=162.55, step_mhz=0.025, digits=3, max_deviation=5000, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, alerts=True)
 AM = Band(min_mhz=0.53, max_mhz=1.7, step_mhz=0.01, digits=2, max_deviation=None, narrow_cutoff=5000, audio_cutoff=5000, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13, khz=True)
 # Direct sampling stops at 14.4 MHz, half of the dongle's 28.8 MHz converter rate.
 SW = Band(min_mhz=2.3, max_mhz=14.4, step_mhz=0.005, digits=3, max_deviation=None, narrow_cutoff=4500, audio_cutoff=4500, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13)
@@ -179,6 +217,137 @@ def rds_checkword(data):
 
 def rds_chars(word):
 	return [chr(byte) if 0x20 <= byte < 0x7F or chr(byte) == RDS_TEXT_END else " " for byte in (word >> 8, word & 0xFF)]
+
+
+@dataclass
+class Alert:
+	name: str
+	event: str = ""
+	locations: tuple = ()
+	issued: datetime | None = None
+	expires: datetime | None = None
+	sender: str = ""
+
+	def applies_to(self, county):
+		"""Checks a 5 or 6 digit county FIPS code against the alert's areas. A county of None, or an alert without areas, always matches."""
+		if not county or not self.locations:
+			return True
+		state, county = county[-5:-3], county[-3:]
+		return any(location[1:3] == state and location[3:] in ("000", county) for location in self.locations)
+
+	def active(self):
+		return self.expires is None or datetime.now(timezone.utc) < self.expires
+
+	def describe(self):
+		text = f"ALERT: {self.name}"
+		if self.expires:
+			text += " until " + self.expires.astimezone().strftime("%I:%M %p").lstrip("0")
+		if self.locations:
+			text += " for " + ", ".join(self.locations)
+		return text
+
+
+def parse_same(text):
+	"""Returns the Alert in a SAME header, or None if text does not hold one."""
+	match = SAME_HEADER.search(text)
+	if match is None:
+		return None
+	sender, event, locations, hours, minutes, day, hour, minute, station = match.groups()
+	year_start = datetime(datetime.now(timezone.utc).year, 1, 1, tzinfo=timezone.utc)
+	issued = year_start + timedelta(days=int(day) - 1, hours=int(hour), minutes=int(minute))
+	return Alert(SAME_EVENTS.get(event, event), event, tuple(locations.split("-")), issued, issued + timedelta(hours=int(hours), minutes=int(minutes)), f"{sender} {station}")
+
+
+class AlertDecoder:
+	"""Finds SAME alert headers and the 1050 Hz alarm tone in weather radio audio."""
+
+	def __init__(self):
+		self.bit_samples = round(AUDIO_RATE / SAME_BAUD)
+		self.new = []
+		self.reset()
+
+	def reset(self):
+		self.sample_index = 0
+		self.filter_state = np.zeros((2, self.bit_samples - 1), dtype=complex)
+		self.phase = 0.0
+		self.last_sign = False
+		self.register = 0
+		self.text = None
+		self.bit_count = 0
+		self.candidates = set()
+		self.reported = set()
+		self.seconds = 0.0
+		self.header_seconds = None
+		self.tone_seconds = 0.0
+
+	def process(self, audio):
+		self.seconds += len(audio) / AUDIO_RATE
+		self.check_tone(audio)
+		n = self.sample_index + np.arange(len(audio))
+		self.sample_index += len(audio)
+		mixed = audio * np.exp(-2j * np.pi * np.outer((SAME_MARK, SAME_SPACE), n) / AUDIO_RATE)
+		tones, self.filter_state = signal.lfilter(np.ones(self.bit_samples) / self.bit_samples, 1, mixed, axis=1, zi=self.filter_state)
+		# Positive where the mark tone, a 1 bit, is stronger.
+		soft = (np.abs(tones[0]) ** 2 - np.abs(tones[1]) ** 2)[::SAME_DECIMATION]
+		step = SAME_BAUD * SAME_DECIMATION / AUDIO_RATE
+		for value in soft:
+			sign = value > 0
+			if sign != self.last_sign:
+				# Bits change at the bit boundary, so pull the bit clock toward each change.
+				self.last_sign = sign
+				self.phase -= SAME_PLL_GAIN * (self.phase if self.phase < 0.5 else self.phase - 1)
+			before = self.phase
+			self.phase += step
+			if before < 0.5 <= self.phase:
+				self.receive_bit(int(sign))
+			if self.phase >= 1:
+				self.phase -= 1
+
+	def receive_bit(self, bit):
+		self.register = (self.register >> 1) | (bit << 31)
+		if self.text is None:
+			if self.register == SAME_START:
+				self.text = "ZCZC"
+				self.bit_count = 0
+			return
+		self.bit_count += 1
+		if self.bit_count < 8:
+			return
+		self.bit_count = 0
+		byte = self.register >> 24
+		if 0x20 <= byte < 0x7F and len(self.text) < SAME_MAX_LENGTH:
+			self.text += chr(byte)
+			return
+		self.receive_header(self.text)
+		self.text = None
+
+	def receive_header(self, text):
+		match = SAME_HEADER.search(text)
+		if match is None:
+			return
+		header = match.group(0)
+		self.header_seconds = self.seconds
+		# Each header is sent three times. Report it once two copies match, and only once.
+		if header in self.reported:
+			return
+		if header not in self.candidates:
+			self.candidates.add(header)
+			return
+		self.reported.add(header)
+		self.new.append(parse_same(header))
+
+	def check_tone(self, audio):
+		n = np.arange(len(audio))
+		tone = 2 * np.abs(np.dot(audio, np.exp(-2j * np.pi * ALARM_FREQ * n / AUDIO_RATE))) ** 2 / len(audio) ** 2
+		if tone < ALARM_RATIO * max(np.mean(audio ** 2), 1e-12):
+			self.tone_seconds = 0.0
+			return
+		before = self.tone_seconds
+		self.tone_seconds += len(audio) / AUDIO_RATE
+		after_header = self.header_seconds is not None and self.seconds - self.header_seconds < ALARM_AFTER_HEADER_SECONDS
+		if before < ALARM_SECONDS <= self.tone_seconds and not after_header:
+			now = datetime.now(timezone.utc)
+			self.new.append(Alert("Warning alarm tone", issued=now, expires=now + timedelta(minutes=ALARM_SHOW_MINUTES)))
 
 
 class RdsDecoder:
@@ -335,6 +504,7 @@ class Demodulator:
 		self.stereo = False
 		self.signal_db = 0.0
 		self.rds = RdsDecoder()
+		self.alerts = AlertDecoder()
 
 	def process(self, samples):
 		spectrum = Spectrum(samples[:SCAN_SAMPLES])
@@ -374,6 +544,8 @@ class Demodulator:
 		mono, difference = filtered[:, ::AUDIO_DECIMATION]
 		channels = np.vstack((mono + difference, mono - difference))
 		channels, self.deemphasis_state = signal.lfilter(*self.deemphasis, channels, axis=1, zi=self.deemphasis_state)
+		if self.band.alerts:
+			self.alerts.process(channels[0])
 		return channels.T
 
 	def update_stereo(self, mpx):
@@ -479,6 +651,9 @@ class Receiver:
 		self.signal_db = 0
 		self.rds_name = ""
 		self.rds_text = ""
+		self.county = None
+		self.alert = None
+		self.on_alert = None
 		self.on_status_change = None
 		self.error = None
 		self.running = True
@@ -558,8 +733,15 @@ class Receiver:
 			if tune_count != self.played_tune_count:
 				self.played_tune_count = tune_count
 				self.demodulator.rds.reset()
+				self.demodulator.alerts.reset()
 				self.buffer.cut(FADE_FRAMES)
 				audio[:len(self.fade_in)] *= self.fade_in
+			new_alerts, self.demodulator.alerts.new = self.demodulator.alerts.new, []
+			for alert in new_alerts:
+				if alert.applies_to(self.county):
+					self.alert = alert
+					if self.on_alert:
+						self.on_alert(alert)
 			status = (self.demodulator.stereo, self.demodulator.rds.name, self.demodulator.rds.text)
 			signal_db = self.demodulator.signal_db
 			if status != (self.stereo, self.rds_name, self.rds_text) or abs(signal_db - self.signal_db) >= SIGNAL_HYSTERESIS_DB:
@@ -679,12 +861,21 @@ def choose_device(devices):
 class RadioCLI:
 	"""Keyboard controls and a status line for a Receiver."""
 
-	def __init__(self, receiver):
+	def __init__(self, receiver, alert_mode=False):
 		self.receiver = receiver
 		self.receiver.on_status_change = self.show_status
+		self.receiver.on_alert = self.announce_alert
+		self.alert_mode = alert_mode
+		if alert_mode:
+			receiver.muted = True
 		self.display_lock = threading.Lock()
 		self.prompting = False
 		self.show_signal = False
+
+	def announce_alert(self, alert):
+		if self.alert_mode:
+			self.receiver.muted = False
+		self.show_message(alert.describe())
 
 	def status_text(self):
 		receiver = self.receiver
@@ -694,6 +885,8 @@ class RadioCLI:
 		if receiver.paused:
 			parts.append("Paused")
 		parts.append(receiver.rds_text)
+		if receiver.alert and receiver.alert.active():
+			parts.insert(1, f"ALERT: {receiver.alert.name}")
 		return " | ".join(part for part in parts if part)
 
 	def show_status(self):
@@ -773,6 +966,8 @@ class RadioCLI:
 	def run(self):
 		original_title = get_title()
 		print(HELP_TEXT)
+		if self.alert_mode:
+			print("Alert mode: the sound stays off until a weather alert arrives.")
 		self.show_status()
 		self.receiver.start()
 		try:
@@ -796,16 +991,24 @@ def main():
 	parser = argparse.ArgumentParser(description="Listen to AM, FM, or NOAA weather radio with an RTL-SDR dongle.")
 	parser.add_argument("frequency", type=float, nargs="?", default=FM.min_mhz, help=f"Frequency in MHz. Default is {FM.min_mhz}.")
 	parser.add_argument("--region", choices=REGIONS, help="Band plan to use. Default is from the system's country setting.")
+	parser.add_argument("--county", help="Only report weather alerts for this 5 or 6 digit county FIPS code.")
+	parser.add_argument("--alert-mode", action="store_true", help="Keep the sound off until a weather alert arrives. Needs a NOAA frequency.")
 	args = parser.parse_args()
 	region = args.region or detect_region()
-	if band_for(args.frequency, REGIONS[region]) is None:
+	band = band_for(args.frequency, REGIONS[region])
+	if band is None:
 		parser.error(f"frequency must be from {band_ranges(REGIONS[region])} MHz")
+	if args.county and not re.fullmatch(r"\d{5,6}", args.county):
+		parser.error("county must be a 5 or 6 digit FIPS code")
+	if args.alert_mode and not band.alerts:
+		parser.error("--alert-mode needs a NOAA weather radio frequency")
 	devices = list_devices()
 	if not devices:
 		print("error: No RTL-SDR devices found.")
 		return 1
 	receiver = Receiver(choose_device(devices).index, args.frequency, region)
-	RadioCLI(receiver).run()
+	receiver.county = args.county
+	RadioCLI(receiver, args.alert_mode).run()
 	if receiver.error:
 		print(f"error: {receiver.error}")
 		return 1

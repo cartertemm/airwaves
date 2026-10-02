@@ -102,6 +102,16 @@ NOAA weather radio works the same way. Give a channel from 162.400 to 162.550 MH
 python sdr.py 162.55
 ```
 
+On weather radio, the script also listens for weather alerts. It reads the alert codes (SAME) that stations send before each alert, and the 1050 Hz alarm tone. Each alert prints on its own line, for example `ALERT: Tornado Warning until 3:45 PM for 004013`, and stays on the status line until it expires. The numbers are county FIPS codes.
+
+To only get alerts for your county, add `--county` with its FIPS code. To keep the sound off until an alert arrives, like a weather radio, add `--alert-mode`:
+
+```
+python sdr.py 162.55 --county 004013 --alert-mode
+```
+
+Stations send a required weekly test, usually on Wednesday between 11 AM and noon local time. It shows as `ALERT: Required Weekly Test`.
+
 For AM radio, give the frequency in MHz, from 0.53 to 1.7. For example, 1400 kHz is 1.4:
 
 ```
@@ -185,4 +195,6 @@ receiver.stop()
 | `signal_db` | Signal strength: how far the station is above the noise, in whole dB. |
 | `rds_name`, `rds_text` | The station name and radio text sent with RDS, or empty text. FM stereo stations only. |
 | `on_status_change` | Called with no arguments when `stereo`, `signal_db`, `rds_name`, or `rds_text` changes. It runs on a background thread. |
+| `county` | A county FIPS code. When set, alerts for other counties are ignored. |
+| `alert`, `on_alert` | The latest weather alert, an `sdr.Alert` with `name`, `event`, `locations`, `issued`, `expires`, and `describe()`. `on_alert` is called with each new alert from a background thread. |
 | `running`, `error` | `running` becomes false if the dongle fails, and `error` holds the cause. |
