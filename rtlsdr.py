@@ -24,29 +24,34 @@ FREQ_STEP_MHZ = 0.1
 VOLUME_STEP = 10
 DEFAULT_VOLUME = 50
 MAX_VOLUME = 100
+# Station audio peaks near full scale, so leave headroom for the sound card.
+OUTPUT_LEVEL = 0.5
 
-SDR_RATE = 1200000
-MPX_RATE = 240000
+SDR_RATE = 1440000
+# A loud stereo signal is about 256 kHz wide, so this rate leaves room for all of it.
+MPX_RATE = 288000
 AUDIO_RATE = 48000
 SDR_DECIMATION = SDR_RATE // MPX_RATE
 AUDIO_DECIMATION = MPX_RATE // AUDIO_RATE
 # Tune below the station so the dongle's DC spike stays out of the channel.
 # A quarter of the sample rate makes the mixer the repeating sequence 1, -j, -1, j.
 TUNE_OFFSET = SDR_RATE // 4
-BLOCK_SIZE = 128000
+BLOCK_SIZE = 153600
 
-CHANNEL_CUTOFF = 100000
-CHANNEL_TAPS = 101
+CHANNEL_CUTOFF = 120000
+CHANNEL_TAPS = 151
 MAX_DEVIATION = 75000
 PILOT_FREQ = 19000
 PILOT_HALF_WIDTH = 500
 PILOT_TAPS = 201
 AUDIO_CUTOFF = 15000
-AUDIO_TAPS = 129
+AUDIO_TAPS = 151
 # North American de-emphasis. Europe uses 50 microseconds.
 DEEMPHASIS_TAU = 75e-6
 PILOT_NOISE_BAND = (16000, 18500)
-STEREO_THRESHOLD = 5.0
+STEREO_THRESHOLD = 10.0
+# Stations send the pilot at about 0.1 of full deviation.
+PILOT_MIN_LEVEL = 0.02
 PILOT_SMOOTHING = 0.3
 # The dongle delivers audio in bursts, so hold some back to keep the sound card fed between bursts.
 PREFILL_FRAMES = AUDIO_RATE // 4
@@ -131,9 +136,12 @@ class StereoFMDemodulator:
 
 	def update_stereo(self, mpx):
 		spectrum = np.abs(np.fft.rfft(mpx * self.window[:len(mpx)]))
-		ratio = spectrum[self.pilot_bins].max() / max(np.median(spectrum[self.noise_bins]), 1e-12)
+		pilot = spectrum[self.pilot_bins].max()
+		ratio = pilot / max(np.median(spectrum[self.noise_bins]), 1e-12)
 		self.pilot_ratio += PILOT_SMOOTHING * (ratio - self.pilot_ratio)
-		self.stereo = self.pilot_ratio > STEREO_THRESHOLD
+		# A Hann windowed sine of amplitude A peaks at A * N / 4.
+		level = 4 * pilot / len(mpx)
+		self.stereo = self.pilot_ratio > STEREO_THRESHOLD and level > PILOT_MIN_LEVEL
 
 
 class AudioBuffer:
@@ -262,7 +270,7 @@ class Receiver:
 
 	def play(self, in_data, frame_count, time_info, status):
 		audio = self.buffer.get(frame_count)
-		gain = 0 if self.muted or self.paused else self.volume / MAX_VOLUME
+		gain = 0 if self.muted or self.paused else self.volume / MAX_VOLUME * OUTPUT_LEVEL
 		return (audio * gain).tobytes(), pyaudio.paContinue
 
 	def status_text(self):
