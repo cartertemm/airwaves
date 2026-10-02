@@ -18,7 +18,7 @@ Here is a list of the available scripts:
 | `iheart.py` | iHeartRadio | Searches iHeartRadio stations and prints their stream URLs. |
 | `streema.py` | Streema | Prints the direct stream URL for a call sign. |
 | `broadcastify.py` | Broadcastify | Searches scanner feeds (fire, police, weather, and more) and prints their stream URLs. |
-| `fmradio.py` | RTL-SDR dongle | Plays FM stereo radio from an RTL-SDR USB dongle. |
+| `fmradio.py` | RTL-SDR dongle | Plays FM stereo radio and NOAA weather radio from an RTL-SDR USB dongle. |
 
 If you run a script with no arguments, it asks you for input.
 
@@ -81,7 +81,7 @@ Then get the stream URL with the feed ID or the feed name:
 python broadcastify.py --stream 20973
 ```
 
-## Listening to FM radio with an RTL-SDR dongle
+## Listening to FM or weather radio with an RTL-SDR dongle
 
 You can use `fmradio.py`. It needs some packages:
 
@@ -96,6 +96,12 @@ python fmradio.py 97.9
 python fmradio.py
 ```
 
+NOAA weather radio works the same way. Give a channel from 162.400 to 162.550 MHz:
+
+```
+python fmradio.py 162.55
+```
+
 If you have more than one dongle, the script asks you to choose one.
 
 | Key | Action |
@@ -103,8 +109,8 @@ If you have more than one dongle, the script asks you to choose one.
 | Space | Play or pause |
 | `_` | Volume down |
 | `+` | Volume up |
-| `s` | Go back 0.1 MHz |
-| `w` | Go forward 0.1 MHz |
+| `s` | Go back one step (0.1 MHz on FM, 25 kHz on weather radio) |
+| `w` | Go forward one step |
 | `t` | Type a frequency in MHz |
 | `m` | Mute or unmute |
 | Ctrl+C | Quit |
@@ -133,7 +139,8 @@ receiver.stop()
 | --- | --- |
 | `list_devices()` | Returns the connected dongles, each with `index`, `name`, and `serial`. |
 | `start()`, `stop()` | Start and stop the dongle and audio. |
-| `tune(freq_mhz)`, `freq_mhz` | Change and read the frequency. |
+| `tune(freq_mhz)`, `freq_mhz` | Change and read the frequency. FM and NOAA frequencies both work. Other frequencies raise `ValueError`. |
+| `band` | The current band, `fmradio.FM` or `fmradio.NOAA`. |
 | `volume` | Volume from 0 to 100. |
 | `paused`, `muted` | Pause or mute the audio. |
 | `stereo` | True when the station sends stereo. |

@@ -12,9 +12,6 @@ from rtlsdr import RtlSdr
 from rtlsdr.librtlsdr import librtlsdr
 from scipy import signal
 
-MIN_FREQ_MHZ = 87.5
-MAX_FREQ_MHZ = 108.0
-FREQ_STEP_MHZ = 0.1
 VOLUME_STEP = 10
 DEFAULT_VOLUME = 50
 MAX_VOLUME = 100
@@ -34,14 +31,10 @@ BLOCK_SIZE = 153600
 
 CHANNEL_CUTOFF = 120000
 CHANNEL_TAPS = 151
-MAX_DEVIATION = 75000
 PILOT_FREQ = 19000
 PILOT_HALF_WIDTH = 500
 PILOT_TAPS = 201
-AUDIO_CUTOFF = 15000
 AUDIO_TAPS = 151
-# North American de-emphasis. Europe uses 50 microseconds.
-DEEMPHASIS_TAU = 75e-6
 PILOT_NOISE_BAND = (16000, 18500)
 STEREO_THRESHOLD = 10.0
 # Stations send the pilot at about 0.1 of full deviation.
@@ -59,22 +52,51 @@ FADE_FRAMES = AUDIO_RATE * 20 // 1000
 KEY_POLL_SECONDS = 0.02
 
 
-class StereoFMDemodulator:
-	"""Turns blocks of raw IQ samples at SDR_RATE into stereo audio at AUDIO_RATE."""
+@dataclass(frozen=True)
+class Band:
+	min_mhz: float
+	max_mhz: float
+	step_mhz: float
+	digits: int
+	max_deviation: int
+	# A second, narrower channel filter after the first decimation. None skips it.
+	narrow_cutoff: int | None
+	audio_cutoff: int
+	stereo: bool
+	deemphasis_tau: float | None
 
-	def __init__(self):
+
+# North American de-emphasis. Europe uses 50 microseconds.
+FM = Band(min_mhz=87.5, max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6)
+NOAA = Band(min_mhz=162.4, max_mhz=162.55, step_mhz=0.025, digits=3, max_deviation=5000, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None)
+BANDS = (FM, NOAA)
+
+
+def band_for(freq_mhz):
+	"""Returns the band that holds freq_mhz, or None."""
+	return next((band for band in BANDS if band.min_mhz <= round(freq_mhz, 3) <= band.max_mhz), None)
+
+
+class StereoFMDemodulator:
+	"""Turns blocks of raw IQ samples at SDR_RATE into audio at AUDIO_RATE for one band."""
+
+	def __init__(self, band):
+		self.band = band
 		n = np.arange(BLOCK_SIZE)
 		self.mixer = np.exp(-2j * np.pi * TUNE_OFFSET * n / SDR_RATE)
 		self.channel_taps = signal.firwin(CHANNEL_TAPS, CHANNEL_CUTOFF, fs=SDR_RATE)
 		self.channel_state = np.zeros(CHANNEL_TAPS - 1, dtype=complex)
+		if band.narrow_cutoff:
+			self.narrow_taps = signal.firwin(CHANNEL_TAPS, band.narrow_cutoff, fs=MPX_RATE)
+			self.narrow_state = np.zeros(CHANNEL_TAPS - 1, dtype=complex)
 		self.last_sample = 1 + 0j
 		n = np.arange(PILOT_TAPS) - (PILOT_TAPS - 1) // 2
 		self.pilot_taps = signal.firwin(PILOT_TAPS, PILOT_HALF_WIDTH, fs=MPX_RATE) * np.exp(2j * np.pi * PILOT_FREQ * n / MPX_RATE)
 		self.pilot_state = np.zeros(PILOT_TAPS - 1, dtype=complex)
 		self.pilot_delay = np.zeros((PILOT_TAPS - 1) // 2)
-		self.audio_taps = signal.firwin(AUDIO_TAPS, AUDIO_CUTOFF, fs=MPX_RATE)
+		self.audio_taps = signal.firwin(AUDIO_TAPS, band.audio_cutoff, fs=MPX_RATE)
 		self.audio_state = np.zeros((2, AUDIO_TAPS - 1))
-		alpha = np.exp(-1 / (AUDIO_RATE * DEEMPHASIS_TAU))
+		alpha = np.exp(-1 / (AUDIO_RATE * band.deemphasis_tau)) if band.deemphasis_tau else 0
 		self.deemphasis = ([1 - alpha], [1, -alpha])
 		self.deemphasis_state = np.zeros((2, 1))
 		freqs = np.fft.rfftfreq(BLOCK_SIZE // SDR_DECIMATION, 1 / MPX_RATE)
@@ -88,10 +110,13 @@ class StereoFMDemodulator:
 		baseband = samples * self.mixer[:len(samples)]
 		baseband, self.channel_state = signal.lfilter(self.channel_taps, 1, baseband, zi=self.channel_state)
 		baseband = baseband[::SDR_DECIMATION]
+		if self.band.narrow_cutoff:
+			baseband, self.narrow_state = signal.lfilter(self.narrow_taps, 1, baseband, zi=self.narrow_state)
 		previous = np.concatenate(([self.last_sample], baseband[:-1]))
 		self.last_sample = baseband[-1]
-		mpx = np.angle(baseband * np.conj(previous)) * MPX_RATE / (2 * np.pi * MAX_DEVIATION)
-		self.update_stereo(mpx)
+		mpx = np.angle(baseband * np.conj(previous)) * MPX_RATE / (2 * np.pi * self.band.max_deviation)
+		if self.band.stereo:
+			self.update_stereo(mpx)
 		pilot, self.pilot_state = signal.lfilter(self.pilot_taps, 1, mpx, zi=self.pilot_state)
 		delayed = np.concatenate((self.pilot_delay, mpx))
 		self.pilot_delay = delayed[len(mpx):]
@@ -196,7 +221,8 @@ class Receiver:
 		self.sdr.sample_rate = SDR_RATE
 		self.sdr.gain = "auto"
 		self.sdr_lock = threading.Lock()
-		self.demodulator = StereoFMDemodulator()
+		self.band = None
+		self.demodulator = None
 		self.raw_blocks = queue.Queue(maxsize=MAX_QUEUED_BLOCKS)
 		self.buffer = AudioBuffer()
 		self.fade_in = np.concatenate((np.zeros(SETTLE_FRAMES), np.linspace(0, 1, FADE_FRAMES)))[:, None]
@@ -237,9 +263,13 @@ class Receiver:
 			thread.start()
 
 	def tune(self, freq_mhz):
-		self.freq_mhz = round(freq_mhz, 1)
+		band = band_for(freq_mhz)
+		if band is None:
+			raise ValueError(f"{freq_mhz} MHz is not in a supported band")
 		with self.sdr_lock:
-			self.sdr.center_freq = int(self.freq_mhz * 1e6) - TUNE_OFFSET
+			self.band = band
+			self.freq_mhz = round(freq_mhz, 3)
+			self.sdr.center_freq = round(self.freq_mhz * 1e6) - TUNE_OFFSET
 			self.tune_count += 1
 
 	def guard(self, target):
@@ -253,19 +283,21 @@ class Receiver:
 		# Only read here, so the next read starts right away and the dongle does not drop samples.
 		while self.running:
 			with self.sdr_lock:
-				tune_count = self.tune_count
+				tune_count, band = self.tune_count, self.band
 				raw = np.ctypeslib.as_array(self.sdr.read_bytes(BLOCK_SIZE * 2)).copy()
 			try:
-				self.raw_blocks.put_nowait((tune_count, raw))
+				self.raw_blocks.put_nowait((tune_count, band, raw))
 			except queue.Full:
 				pass
 
 	def demodulate(self):
 		while self.running:
 			try:
-				tune_count, raw = self.raw_blocks.get(timeout=QUEUE_TIMEOUT_SECONDS)
+				tune_count, band, raw = self.raw_blocks.get(timeout=QUEUE_TIMEOUT_SECONDS)
 			except queue.Empty:
 				continue
+			if self.demodulator is None or band is not self.demodulator.band:
+				self.demodulator = StereoFMDemodulator(band)
 			audio = self.demodulator.process(self.sdr.packed_bytes_to_iq(raw)).astype(np.float32)
 			if tune_count != self.played_tune_count:
 				self.played_tune_count = tune_count
@@ -324,6 +356,9 @@ def read_key():
 	return key
 
 
+BAND_RANGES = " or ".join(f"{band.min_mhz} to {band.max_mhz}" for band in BANDS)
+
+
 def choose_device(devices):
 	if len(devices) == 1:
 		return devices[0]
@@ -341,7 +376,7 @@ class RadioCLI:
 
 	def status_text(self):
 		receiver = self.receiver
-		parts = [f"{receiver.freq_mhz:.1f} MHz", "Stereo" if receiver.stereo else "Mono", f"Volume {receiver.volume}%"]
+		parts = [f"{receiver.freq_mhz:.{receiver.band.digits}f} MHz", "Stereo" if receiver.stereo else "Mono", f"Volume {receiver.volume}%"]
 		if receiver.muted:
 			parts.append("Muted")
 		if receiver.paused:
@@ -365,7 +400,7 @@ class RadioCLI:
 			self.prompting = True
 			sys.stdout.write("\n")
 		try:
-			text = input(f"Frequency in MHz ({MIN_FREQ_MHZ} to {MAX_FREQ_MHZ}): ")
+			text = input(f"Frequency in MHz ({BAND_RANGES}): ")
 		finally:
 			self.prompting = False
 		try:
@@ -373,15 +408,15 @@ class RadioCLI:
 		except ValueError:
 			self.show_message("error: Input must be a number.")
 			return
-		if not MIN_FREQ_MHZ <= freq_mhz <= MAX_FREQ_MHZ:
+		if band_for(freq_mhz) is None:
 			self.show_message("error: Frequency not in range.")
 			return
 		self.receiver.tune(freq_mhz)
 		self.show_status()
 
 	def step(self, direction):
-		freq_mhz = self.receiver.freq_mhz + direction * FREQ_STEP_MHZ
-		if MIN_FREQ_MHZ <= round(freq_mhz, 1) <= MAX_FREQ_MHZ:
+		freq_mhz = self.receiver.freq_mhz + direction * self.receiver.band.step_mhz
+		if band_for(freq_mhz) is self.receiver.band:
 			self.receiver.tune(freq_mhz)
 
 	def handle_key(self, key):
@@ -424,11 +459,11 @@ class RadioCLI:
 
 
 def main():
-	parser = argparse.ArgumentParser(description="Listen to FM radio with an RTL-SDR dongle.")
-	parser.add_argument("frequency", type=float, nargs="?", default=MIN_FREQ_MHZ, help=f"Frequency in MHz. Default is {MIN_FREQ_MHZ}.")
+	parser = argparse.ArgumentParser(description="Listen to FM or NOAA weather radio with an RTL-SDR dongle.")
+	parser.add_argument("frequency", type=float, nargs="?", default=FM.min_mhz, help=f"Frequency in MHz, FM or NOAA weather radio. Default is {FM.min_mhz}.")
 	args = parser.parse_args()
-	if not MIN_FREQ_MHZ <= args.frequency <= MAX_FREQ_MHZ:
-		parser.error(f"frequency must be from {MIN_FREQ_MHZ} to {MAX_FREQ_MHZ} MHz")
+	if band_for(args.frequency) is None:
+		parser.error(f"frequency must be from {BAND_RANGES} MHz")
 	devices = list_devices()
 	if not devices:
 		print("error: No RTL-SDR devices found.")
