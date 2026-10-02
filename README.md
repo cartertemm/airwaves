@@ -6,7 +6,7 @@ These were mostly written a few years ago (before the GenAI era). I have continu
 
 Please note that some of these services (radio locator for instance) impose IP-based rate limits. Not all of them are documented. It is important to do your own A/B testing and be mindful of this so you don't encounter them in an application.
 
-All scripts need Python 3.10 or later. All scripts except `fmradio.py` use only the standard library.
+All scripts need Python 3.10 or later. All scripts except `sdr.py` use only the standard library.
 
 Here is a list of the available scripts:
 
@@ -18,7 +18,7 @@ Here is a list of the available scripts:
 | `iheart.py` | iHeartRadio | Searches iHeartRadio stations and prints their stream URLs. |
 | `streema.py` | Streema | Prints the direct stream URL for a call sign. |
 | `broadcastify.py` | Broadcastify | Searches scanner feeds (fire, police, weather, and more) and prints their stream URLs. |
-| `fmradio.py` | RTL-SDR dongle | Plays FM stereo radio and NOAA weather radio from an RTL-SDR USB dongle. |
+| `sdr.py` | RTL-SDR dongle | Plays AM radio, FM stereo radio, and NOAA weather radio from an RTL-SDR USB dongle. |
 
 If you run a script with no arguments, it asks you for input.
 
@@ -81,9 +81,9 @@ Then get the stream URL with the feed ID or the feed name:
 python broadcastify.py --stream 20973
 ```
 
-## Listening to FM or weather radio with an RTL-SDR dongle
+## Listening to AM, FM, or weather radio with an RTL-SDR dongle
 
-You can use `fmradio.py`. It needs some packages:
+You can use `sdr.py`. It needs some packages:
 
 ```
 pip install numpy scipy pyaudio pyrtlsdr pyrtlsdrlib
@@ -92,15 +92,23 @@ pip install numpy scipy pyaudio pyrtlsdr pyrtlsdrlib
 Give a frequency in MHz, or give no frequency to start at 87.5 MHz:
 
 ```
-python fmradio.py 97.9
-python fmradio.py
+python sdr.py 97.9
+python sdr.py
 ```
 
 NOAA weather radio works the same way. Give a channel from 162.400 to 162.550 MHz:
 
 ```
-python fmradio.py 162.55
+python sdr.py 162.55
 ```
+
+For AM radio, give the frequency in MHz, from 0.53 to 1.7. For example, 1400 kHz is 1.4:
+
+```
+python sdr.py 1.4
+```
+
+AM uses the dongle's direct sampling mode. Some dongles need a hardware change before direct sampling picks up anything.
 
 If you have more than one dongle, the script asks you to choose one.
 
@@ -109,7 +117,7 @@ If you have more than one dongle, the script asks you to choose one.
 | Space | Play or pause |
 | `_` | Volume down |
 | `+` | Volume up |
-| `s` | Go back one step (0.1 MHz on FM, 25 kHz on weather radio) |
+| `s` | Go back one step (10 kHz on AM, 0.1 MHz on FM, 25 kHz on weather radio) |
 | `w` | Go forward one step |
 | `S` (Shift+S) | Scan back to the previous station |
 | `W` (Shift+W) | Scan forward to the next station |
@@ -121,13 +129,13 @@ The keys work on Windows only.
 
 ### Using the receiver from another program
 
-`fmradio.py` can also be imported. The receiver does not need the keyboard controls:
+`sdr.py` can also be imported. The receiver does not need the keyboard controls:
 
 ```python
-import fmradio
+import sdr
 
-devices = fmradio.list_devices()
-receiver = fmradio.Receiver(devices[0].index, 97.9)
+devices = sdr.list_devices()
+receiver = sdr.Receiver(devices[0].index, 97.9)
 receiver.on_stereo_change = lambda stereo: print("Stereo" if stereo else "Mono")
 receiver.start()
 receiver.volume = 70
@@ -141,8 +149,8 @@ receiver.stop()
 | --- | --- |
 | `list_devices()` | Returns the connected dongles, each with `index`, `name`, and `serial`. |
 | `start()`, `stop()` | Start and stop the dongle and audio. |
-| `tune(freq_mhz)`, `freq_mhz` | Change and read the frequency. FM and NOAA frequencies both work. Other frequencies raise `ValueError`. |
-| `band` | The current band, `fmradio.FM` or `fmradio.NOAA`. |
+| `tune(freq_mhz)`, `freq_mhz` | Change and read the frequency. AM, FM, and NOAA frequencies all work. Other frequencies raise `ValueError`. |
+| `band` | The current band, `sdr.AM`, `sdr.FM`, or `sdr.NOAA`. |
 | `seek(direction)` | Scans up (`1`) or down (`-1`) to the next station in the band and tunes to it. It wraps at the band edges, blocks while scanning (about 1 second), and returns the new frequency, or `None` if it found no other station. |
 | `volume` | Volume from 0 to 100. |
 | `paused`, `muted` | Pause or mute the audio. |

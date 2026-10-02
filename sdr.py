@@ -28,6 +28,7 @@ AUDIO_DECIMATION = MPX_RATE // AUDIO_RATE
 # A quarter of the sample rate makes the mixer the repeating sequence 1, -j, -1, j.
 TUNE_OFFSET = SDR_RATE // 4
 BLOCK_SIZE = 153600
+SDR_GAIN = "auto"
 
 CHANNEL_CUTOFF = 120000
 CHANNEL_TAPS = 151
@@ -40,6 +41,8 @@ STEREO_THRESHOLD = 10.0
 # Stations send the pilot at about 0.1 of full deviation.
 PILOT_MIN_LEVEL = 0.02
 PILOT_SMOOTHING = 0.3
+# Removes the AM carrier level, which is everything below about 20 Hz.
+DC_BLOCK_POLE = 1 - 2 * np.pi * 20 / MPX_RATE
 # The dongle delivers audio in bursts, so hold some back to keep the sound card fed between bursts.
 PREFILL_FRAMES = AUDIO_RATE // 4
 MAX_BUFFER_FRAMES = AUDIO_RATE
@@ -51,7 +54,6 @@ FADE_FRAMES = AUDIO_RATE * 20 // 1000
 SCAN_SAMPLES = 32768
 # Skip the tuner settling noise after each retune while scanning.
 SCAN_SETTLE_BYTES = 8192
-SCAN_THRESHOLD = 10 ** (5 / 10)
 # HD Radio sidebands sit two channels from a station and 14 dB or more below it.
 SCAN_SIDEBAND_RATIO = 10 ** (10 / 10)
 
@@ -64,18 +66,24 @@ class Band:
 	max_mhz: float
 	step_mhz: float
 	digits: int
-	max_deviation: int
+	max_deviation: int | None
 	# A second, narrower channel filter after the first decimation. None skips it.
 	narrow_cutoff: int | None
 	audio_cutoff: int
 	stereo: bool
 	deemphasis_tau: float | None
+	am: bool = False
+	# How far above the noise a channel must be for a scan to stop there.
+	scan_threshold_db: float = 5
+	# Bands below the tuner's range feed the antenna straight to the dongle's converter.
+	direct_sampling: bool = False
 
 
 # North American de-emphasis. Europe uses 50 microseconds.
 FM = Band(min_mhz=87.5, max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6)
 NOAA = Band(min_mhz=162.4, max_mhz=162.55, step_mhz=0.025, digits=3, max_deviation=5000, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None)
-BANDS = (FM, NOAA)
+AM = Band(min_mhz=0.53, max_mhz=1.7, step_mhz=0.01, digits=2, max_deviation=None, narrow_cutoff=5000, audio_cutoff=5000, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13)
+BANDS = (AM, FM, NOAA)
 
 
 def band_for(freq_mhz):
@@ -83,7 +91,7 @@ def band_for(freq_mhz):
 	return next((band for band in BANDS if band.min_mhz <= round(freq_mhz, 3) <= band.max_mhz), None)
 
 
-class StereoFMDemodulator:
+class Demodulator:
 	"""Turns blocks of raw IQ samples at SDR_RATE into audio at AUDIO_RATE for one band."""
 
 	def __init__(self, band):
@@ -96,6 +104,7 @@ class StereoFMDemodulator:
 			self.narrow_taps = signal.firwin(CHANNEL_TAPS, band.narrow_cutoff, fs=MPX_RATE)
 			self.narrow_state = np.zeros(CHANNEL_TAPS - 1, dtype=complex)
 		self.last_sample = 1 + 0j
+		self.dc_state = np.zeros(1)
 		n = np.arange(PILOT_TAPS) - (PILOT_TAPS - 1) // 2
 		self.pilot_taps = signal.firwin(PILOT_TAPS, PILOT_HALF_WIDTH, fs=MPX_RATE) * np.exp(2j * np.pi * PILOT_FREQ * n / MPX_RATE)
 		self.pilot_state = np.zeros(PILOT_TAPS - 1, dtype=complex)
@@ -118,9 +127,13 @@ class StereoFMDemodulator:
 		baseband = baseband[::SDR_DECIMATION]
 		if self.band.narrow_cutoff:
 			baseband, self.narrow_state = signal.lfilter(self.narrow_taps, 1, baseband, zi=self.narrow_state)
-		previous = np.concatenate(([self.last_sample], baseband[:-1]))
-		self.last_sample = baseband[-1]
-		mpx = np.angle(baseband * np.conj(previous)) * MPX_RATE / (2 * np.pi * self.band.max_deviation)
+		if self.band.am:
+			envelope = np.abs(baseband)
+			mpx, self.dc_state = signal.lfilter([1, -1], [1, -DC_BLOCK_POLE], envelope / envelope.mean(), zi=self.dc_state)
+		else:
+			previous = np.concatenate(([self.last_sample], baseband[:-1]))
+			self.last_sample = baseband[-1]
+			mpx = np.angle(baseband * np.conj(previous)) * MPX_RATE / (2 * np.pi * self.band.max_deviation)
 		if self.band.stereo:
 			self.update_stereo(mpx)
 		pilot, self.pilot_state = signal.lfilter(self.pilot_taps, 1, mpx, zi=self.pilot_state)
@@ -225,7 +238,7 @@ class Receiver:
 	def __init__(self, device_index, freq_mhz):
 		self.sdr = RtlSdr(device_index=device_index)
 		self.sdr.sample_rate = SDR_RATE
-		self.sdr.gain = "auto"
+		self.sdr.gain = SDR_GAIN
 		self.sdr_lock = threading.RLock()
 		self.band = None
 		self.demodulator = None
@@ -272,10 +285,20 @@ class Receiver:
 		band = band_for(freq_mhz)
 		if band is None:
 			raise ValueError(f"{freq_mhz} MHz is not in a supported band")
+		freq_mhz = round(freq_mhz, 3)
+		center_freq = round(freq_mhz * 1e6) - TUNE_OFFSET
 		with self.sdr_lock:
+			was_direct = bool(self.band and self.band.direct_sampling)
+			if band.direct_sampling != was_direct:
+				if was_direct:
+					# Leaving direct sampling retunes to the current frequency, so it must be one the tuner can reach.
+					self.sdr.center_freq = center_freq
+				self.sdr.set_direct_sampling("q" if band.direct_sampling else 0)
+				# Changing mode resets the tuner, including its gain.
+				self.sdr.gain = SDR_GAIN
 			self.band = band
-			self.freq_mhz = round(freq_mhz, 3)
-			self.sdr.center_freq = round(self.freq_mhz * 1e6) - TUNE_OFFSET
+			self.freq_mhz = freq_mhz
+			self.sdr.center_freq = center_freq
 			self.tune_count += 1
 
 	def guard(self, target):
@@ -303,7 +326,7 @@ class Receiver:
 			except queue.Empty:
 				continue
 			if self.demodulator is None or band is not self.demodulator.band:
-				self.demodulator = StereoFMDemodulator(band)
+				self.demodulator = Demodulator(band)
 			audio = self.demodulator.process(self.sdr.packed_bytes_to_iq(raw)).astype(np.float32)
 			if tune_count != self.played_tune_count:
 				self.played_tune_count = tune_count
@@ -349,7 +372,7 @@ class Receiver:
 		half_width = band.narrow_cutoff or band.step_mhz * 1e6 / 2
 		step = band.step_mhz * 1e6
 		here, below, above, two_below, two_above = (power[np.abs(freqs - TUNE_OFFSET - offset) < half_width].mean() for offset in (0, -step, step, -2 * step, 2 * step))
-		return here > np.median(power) * SCAN_THRESHOLD and here >= max(below, above) and here * SCAN_SIDEBAND_RATIO >= max(two_below, two_above)
+		return here > np.median(power) * 10 ** (band.scan_threshold_db / 10) and here >= max(below, above) and here * SCAN_SIDEBAND_RATIO >= max(two_below, two_above)
 
 	def stop(self):
 		self.running = False
@@ -506,8 +529,8 @@ class RadioCLI:
 
 
 def main():
-	parser = argparse.ArgumentParser(description="Listen to FM or NOAA weather radio with an RTL-SDR dongle.")
-	parser.add_argument("frequency", type=float, nargs="?", default=FM.min_mhz, help=f"Frequency in MHz, FM or NOAA weather radio. Default is {FM.min_mhz}.")
+	parser = argparse.ArgumentParser(description="Listen to AM, FM, or NOAA weather radio with an RTL-SDR dongle.")
+	parser.add_argument("frequency", type=float, nargs="?", default=FM.min_mhz, help=f"Frequency in MHz, AM, FM, or NOAA weather radio. Default is {FM.min_mhz}.")
 	args = parser.parse_args()
 	if band_for(args.frequency) is None:
 		parser.error(f"frequency must be from {BAND_RANGES} MHz")
