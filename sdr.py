@@ -75,6 +75,9 @@ SIGNAL_HYSTERESIS_DB = 1
 SCAN_SETTLE_BYTES = 8192
 # HD Radio sidebands sit two channels from a station and 14 dB or more below it.
 SCAN_SIDEBAND_RATIO = 10 ** (10 / 10)
+# A scan only measures channels in this part of a capture, away from the spike at its center and the roll-off at its edges.
+SCAN_LOW_OFFSET = 100000
+SCAN_HIGH_OFFSET = 600000
 
 KEY_POLL_SECONDS = 0.02
 TITLE_LENGTH = 1024
@@ -98,13 +101,20 @@ class Band:
 	# Bands below the tuner's range feed the antenna straight to the dongle's converter.
 	direct_sampling: bool = False
 
+	@property
+	def half_width(self):
+		"""Half the width of the frequency range measured for one channel."""
+		return self.narrow_cutoff or self.step_mhz * 1e6 / 2
+
 
 # North American de-emphasis. Europe uses 50 microseconds.
 FM = Band(min_mhz=87.5, max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6)
 NOAA = Band(min_mhz=162.4, max_mhz=162.55, step_mhz=0.025, digits=3, max_deviation=5000, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None)
 AM = Band(min_mhz=0.53, max_mhz=1.7, step_mhz=0.01, digits=2, max_deviation=None, narrow_cutoff=5000, audio_cutoff=5000, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13)
+# Direct sampling stops at 14.4 MHz, half of the dongle's 28.8 MHz converter rate.
+SW = Band(min_mhz=2.3, max_mhz=14.4, step_mhz=0.005, digits=3, max_deviation=None, narrow_cutoff=4500, audio_cutoff=4500, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13)
 AIR = Band(min_mhz=118.0, max_mhz=136.975, step_mhz=0.025, digits=3, max_deviation=None, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, am=True)
-BANDS = (AM, FM, AIR, NOAA)
+BANDS = (AM, SW, FM, AIR, NOAA)
 
 
 def band_for(freq_mhz):
@@ -112,13 +122,24 @@ def band_for(freq_mhz):
 	return next((band for band in BANDS if band.min_mhz <= round(freq_mhz, 3) <= band.max_mhz), None)
 
 
-def channel_powers(samples, band):
-	"""Returns the noise floor, then the power in the channel at TUNE_OFFSET and in the channels one and two steps below and above it."""
-	power = np.abs(np.fft.fft(samples * np.hanning(len(samples)))) ** 2
-	freqs = np.fft.fftfreq(len(samples), 1 / SDR_RATE)
-	half_width = band.narrow_cutoff or band.step_mhz * 1e6 / 2
-	step = band.step_mhz * 1e6
-	return np.median(power), *(power[np.abs(freqs - TUNE_OFFSET - offset) < half_width].mean() for offset in (0, -step, step, -2 * step, 2 * step))
+class Spectrum:
+	"""The power spectrum of one capture, used to measure channels in it."""
+
+	def __init__(self, samples):
+		self.power = np.abs(np.fft.fft(samples * np.hanning(len(samples)))) ** 2
+		self.freqs = np.fft.fftfreq(len(samples), 1 / SDR_RATE)
+		self.floor = np.median(self.power)
+
+	def channel_powers(self, offset, band):
+		"""Returns the power in the channel at offset from the capture center, then in the channels one and two steps below and above it."""
+		step = band.step_mhz * 1e6
+		return [self.power[np.abs(self.freqs - offset - shift) < band.half_width].mean() for shift in (0, -step, step, -2 * step, 2 * step)]
+
+
+def has_station(spectrum, offset, band):
+	"""Checks for a signal that is above the noise, stronger than the channels next to it, and not a sideband of a station two channels away."""
+	here, below, above, two_below, two_above = spectrum.channel_powers(offset, band)
+	return here > spectrum.floor * 10 ** (band.scan_threshold_db / 10) and here >= max(below, above) and here * SCAN_SIDEBAND_RATIO >= max(two_below, two_above)
 
 
 def rds_checkword(data):
@@ -292,8 +313,9 @@ class Demodulator:
 		self.rds = RdsDecoder()
 
 	def process(self, samples):
-		floor, here, *neighbors = channel_powers(samples[:SCAN_SAMPLES], self.band)
-		self.signal_db += SIGNAL_SMOOTHING * (10 * np.log10(here / floor) - self.signal_db)
+		spectrum = Spectrum(samples[:SCAN_SAMPLES])
+		here = spectrum.channel_powers(TUNE_OFFSET, self.band)[0]
+		self.signal_db += SIGNAL_SMOOTHING * (10 * np.log10(here / spectrum.floor) - self.signal_db)
 		baseband = samples * self.mixer[:len(samples)]
 		baseband, self.channel_state = signal.lfilter(self.channel_taps, 1, baseband, zi=self.channel_state)
 		baseband = baseband[::SDR_DECIMATION]
@@ -536,22 +558,32 @@ class Receiver:
 		count = round((band.max_mhz - band.min_mhz) / band.step_mhz) + 1
 		start = round((self.freq_mhz - band.min_mhz) / band.step_mhz)
 		channels = (round(band.min_mhz + (start + direction * i) % count * band.step_mhz, 3) for i in range(1, count))
+		# Room for the measured channel and its neighbors two steps away.
+		margin = 2 * band.step_mhz * 1e6 + band.half_width
+		center = None
+		found = None
 		with self.sdr_lock:
 			# Fade out the current station. Wait for the block being decoded first, or it would play after the fade.
 			self.raw_blocks.join()
 			self.buffer.cut(FADE_FRAMES)
-			found = next((freq_mhz for freq_mhz in channels if self.has_station(freq_mhz, band)), None)
+			for freq_mhz in channels:
+				freq = round(freq_mhz * 1e6)
+				if center is None or not SCAN_LOW_OFFSET + margin <= freq - center <= SCAN_HIGH_OFFSET - margin:
+					# Place the capture so it covers as many of the channels ahead as it can, without a negative center frequency.
+					center = max(freq - (SCAN_LOW_OFFSET + margin if direction > 0 else SCAN_HIGH_OFFSET - margin), 0)
+					spectrum = self.capture(center)
+				if has_station(spectrum, freq - center, band):
+					found = freq_mhz
+					break
 			# Tune before releasing the lock, so no block is read at the new frequency under the old tune count.
 			self.tune(self.freq_mhz if found is None else found)
 		return found
 
-	def has_station(self, freq_mhz, band):
-		"""Checks for a signal that is above the noise, stronger than the channels next to it, and not a sideband of a station two channels away. Call with sdr_lock held."""
-		self.sdr.center_freq = round(freq_mhz * 1e6) - TUNE_OFFSET
+	def capture(self, center_freq):
+		"""Tunes to center_freq and returns the spectrum around it. Call with sdr_lock held."""
+		self.sdr.center_freq = center_freq
 		self.sdr.read_bytes(SCAN_SETTLE_BYTES)
-		samples = self.sdr.packed_bytes_to_iq(self.sdr.read_bytes(SCAN_SAMPLES * 2))
-		floor, here, below, above, two_below, two_above = channel_powers(samples, band)
-		return here > floor * 10 ** (band.scan_threshold_db / 10) and here >= max(below, above) and here * SCAN_SIDEBAND_RATIO >= max(two_below, two_above)
+		return Spectrum(self.sdr.packed_bytes_to_iq(self.sdr.read_bytes(SCAN_SAMPLES * 2)))
 
 	def stop(self):
 		self.running = False
