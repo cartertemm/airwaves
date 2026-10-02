@@ -1,110 +1,56 @@
 # Radio Utils
 
-A set of CLI based utilities having to do with discovering nearby radio stations, finding their stream URLs, and ultimately playing them.
+This repository contains scripts for digitally receiving and getting information about radio stations.
 
-These were mostly written a few years ago (before the GenAI era). I have continued maintaining them because I have found them useful. I hope someone else does so too!
+The primary application is `sdr.py`, a radio receiver that plays AM, shortwave, FM, aviation, and NOAA weather radio from an RTL-SDR USB dongle. The other scripts find nearby stations and their stream URLs through online services such as TuneIn and Broadcastify.
 
-Please note that some of these services (radio locator for instance) impose IP-based rate limits. Not all of them are documented. It is important to do your own A/B testing and be mindful of this so you don't encounter them in an application.
+## SDR Listener
 
-All scripts need Python 3.10 or later. All scripts except `sdr.py` use only the standard library.
+### Features
 
-Here is a list of the available scripts:
+* AM radio from 0.53 to 1.7 MHz.
+* Shortwave radio from 2.3 to 14.4 MHz, in 5 kHz channels.
+* FM radio in stereo, with the station name and radio text (often the artist and song) from RDS.
+* The aviation band from 118.000 to 136.975 MHz, in 25 kHz channels. Aircraft and control towers only transmit when someone talks, so you hear static between transmissions.
+* NOAA weather radio from 162.400 to 162.550 MHz, with weather alerts. The script reads the alert codes (SAME) that stations send before each alert, and the 1050 Hz alarm tone.
+* Scanning up or down to the next station in the band.
+* US and European band settings. In Europe, AM is 531 to 1602 kHz in 9 kHz steps, FM uses 50 microsecond de-emphasis, and there is no NOAA weather radio.
+* The status line and the window title show the frequency, and optionally the signal strength.
 
-| Script | Source | Purpose |
-| --- | --- | --- |
-| `radiolocator.py` | radio-locator.com | Lists AM and FM stations near a zip code with distance, signal strength, and format. Shows full details for one call sign. |
-| `zipsignal.py` | V-Soft ZipSignal | Lists AM and FM stations whose signal covers a zip code. |
-| `tunein.py` | TuneIn | Searches stations by name, call sign, or location and prints their stream URLs. |
-| `iheart.py` | iHeartRadio | Searches iHeartRadio stations and prints their stream URLs. |
-| `streema.py` | Streema | Prints the direct stream URL for a call sign. |
-| `broadcastify.py` | Broadcastify | Searches scanner feeds (fire, police, weather, and more) and prints their stream URLs. |
-| `sdr.py` | RTL-SDR dongle | Plays AM radio, shortwave radio, FM stereo radio, aviation radio, and NOAA weather radio from an RTL-SDR USB dongle. |
+AM and shortwave use the dongle's direct sampling mode. Some dongles need a hardware change before direct sampling picks up anything. Direct sampling stops at 14.4 MHz, so the shortwave bands above that need an upconverter. Shortwave also needs a long wire antenna, ideally outside.
 
-If you run a script with no arguments, it asks you for input.
+### Running
 
-## Finding stations at a location
-
-You can use `radiolocator.py`, `zipsignal.py`, or `tunein.py`.
-
-`radiolocator.py` and `zipsignal.py` take a 5 digit US zip code:
-
-```
-python radiolocator.py 60601
-python zipsignal.py 60601
-```
-
-To get full details for one station from the list, such as its owner, address, and transmitter data:
-
-```
-python radiolocator.py --info WBBM
-python radiolocator.py --info WGN-AM
-```
-
-`tunein.py` takes a place name or a zip code and also prints the stream URLs:
-
-```
-python tunein.py --location "Chicago, IL"
-python tunein.py --location 60601
-```
-
-## Finding the direct stream URL from a call sign
-
-You can use `streema.py`, `tunein.py`, or `iheart.py`.
-
-```
-python streema.py WFMT
-python streema.py WGN-AM
-python tunein.py --callsign WFMT
-```
-
-`tunein.py` and `iheart.py` can also search by station name:
-
-```
-python tunein.py "jazz"
-python iheart.py WGCI
-```
-
-## Finding fire, police, weather, etc
-
-You can use `broadcastify.py`.
-
-Search feeds by place or keyword. The results show the feed ID, status, and listener count:
-
-```
-python broadcastify.py "Cook County"
-python broadcastify.py "NOAA weather"
-```
-
-Then get the stream URL with the feed ID or the feed name:
-
-```
-python broadcastify.py --stream 20973
-```
-
-## Listening to AM, shortwave, FM, aviation, or weather radio with an RTL-SDR dongle
-
-You can use `sdr.py`. It needs some packages:
+The script needs Python 3.10 or later and some packages:
 
 ```
 pip install numpy scipy pyaudio pyrtlsdr pyrtlsdrlib
 ```
 
-Give a frequency in MHz, or give no frequency to start at 87.5 MHz:
+Give a frequency in MHz, or give no frequency to start at 87.5 MHz.
+
+When tuning to AM frequencies, specify them in MHz. For example, to listen to 1400 kHz, type "1.4".
+
+Usage:
 
 ```
-python sdr.py 97.9
 python sdr.py
-```
-
-NOAA weather radio works the same way. Give a channel from 162.400 to 162.550 MHz:
-
-```
+python sdr.py 97.9
+python sdr.py 1.4
+python sdr.py 9.58
+python sdr.py 127.575
 python sdr.py 162.55
 ```
 
-On weather radio, the script also listens for weather alerts. It reads the alert codes (SAME) that stations send before each alert, and the 1050 Hz alarm tone. Each alert prints on its own line, for example `ALERT: Tornado Warning until 3:45 PM for 004013`, and stays on the status line until it expires. The numbers are county FIPS codes.
+If you have more than one dongle, the script asks you to choose one before it starts playback.
 
-To only get alerts for your county, add `--county` with its FIPS code. To keep the sound off until an alert arrives, like a weather radio, add `--alert-mode`:
+The script picks US or European band settings from the country in your system settings. this is obtained through the Windows region, or the `LANG` setting on Linux and macOS. If that is not set, it falls back to US. You can override this by invoking `sdr.py` with `--region us` or `--region eu`:
+
+```
+python sdr.py 97.9 --region eu
+```
+
+On weather radio, each alert prints on its own line, for example `ALERT: Tornado Warning until 3:45 PM for 004013`, and stays on the status line until it expires. The numbers are county FIPS codes. To only get alerts for your county, add `--county` with its FIPS code. To keep the sound off until an alert arrives, like a weather radio, add `--alert-mode`:
 
 ```
 python sdr.py 162.55 --county 004013 --alert-mode
@@ -112,39 +58,9 @@ python sdr.py 162.55 --county 004013 --alert-mode
 
 Stations send a required weekly test, usually on Wednesday between 11 AM and noon local time. It shows as `ALERT: Required Weekly Test`.
 
-For AM radio, give the frequency in MHz, from 0.53 to 1.7. For example, 1400 kHz is 1.4:
+### Keystrokes
 
-```
-python sdr.py 1.4
-```
-
-Shortwave radio is 2.3 to 14.4 MHz, in 5 kHz channels:
-
-```
-python sdr.py 9.58
-```
-
-AM and shortwave use the dongle's direct sampling mode. Some dongles need a hardware change before direct sampling picks up anything. Direct sampling stops at 14.4 MHz, so the shortwave bands above that need an upconverter. Shortwave also needs a long wire antenna, ideally outside.
-
-The aviation band is 118.000 to 136.975 MHz, in 25 kHz channels:
-
-```
-python sdr.py 127.575
-```
-
-Aircraft and control towers only transmit when someone talks, so you hear static between transmissions.
-
-If you have more than one dongle, the script asks you to choose one.
-
-The script uses US or European band settings. It picks them from the country in your system settings: the Windows region, or the `LANG` setting on Linux and macOS. If that is not set, it uses US settings. To choose, add `--region us` or `--region eu`:
-
-```
-python sdr.py 97.9 --region eu
-```
-
-In Europe, AM is 531 to 1602 kHz in 9 kHz steps, FM uses 50 microsecond de-emphasis, and there is no NOAA weather radio.
-
-The status line and the window title show the frequency. Press `i` to also show the signal strength. On FM stations that send RDS, they also show the station name and the radio text, which is often the artist and song.
+The keys work on Windows only.
 
 | Key | Action |
 | --- | --- |
@@ -160,8 +76,6 @@ The status line and the window title show the frequency. Press `i` to also show 
 | `i` | Show or hide the signal strength |
 | `h` | List the keys |
 | Ctrl+C | Quit |
-
-The keys work on Windows only.
 
 ### Using the receiver from another program
 
@@ -198,3 +112,77 @@ receiver.stop()
 | `county` | A county FIPS code. When set, alerts for other counties are ignored. |
 | `alert`, `on_alert` | The latest weather alert, an `sdr.Alert` with `name`, `event`, `locations`, `issued`, `expires`, and `describe()`. `on_alert` is called with each new alert from a background thread. |
 | `running`, `error` | `running` becomes false if the dongle fails, and `error` holds the cause. |
+
+## Other scripts
+
+These scripts are in the `scripts` folder. They need Python 3.10 or later and use only the standard library. If you run one with no arguments, it asks you for input.
+
+Some of these services (radio-locator.com, for example) limit how many requests one IP address can make. Not all of the limits are documented.
+
+| Script | Source | Purpose |
+| --- | --- | --- |
+| `radiolocator.py` | radio-locator.com | Lists AM and FM stations near a zip code with distance, signal strength, and format. Shows full details for one call sign. |
+| `zipsignal.py` | V-Soft ZipSignal | Lists AM and FM stations whose signal covers a zip code. |
+| `tunein.py` | TuneIn | Searches stations by name, call sign, or location and prints their stream URLs. |
+| `iheart.py` | iHeartRadio | Searches iHeartRadio stations and prints their stream URLs. |
+| `streema.py` | Streema | Prints the direct stream URL for a call sign. |
+| `broadcastify.py` | Broadcastify | Searches scanner feeds (fire, police, weather, and more) and prints their stream URLs. |
+
+### Finding stations at a location
+
+You can use `radiolocator.py`, `zipsignal.py`, or `tunein.py`.
+
+`radiolocator.py` and `zipsignal.py` take a 5 digit US zip code:
+
+```
+python scripts/radiolocator.py 60601
+python scripts/zipsignal.py 60601
+```
+
+To get full details for one station from the list, such as its owner, address, and transmitter data:
+
+```
+python scripts/radiolocator.py --info WBBM
+python scripts/radiolocator.py --info WGN-AM
+```
+
+`tunein.py` takes a place name or a zip code and also prints the stream URLs:
+
+```
+python scripts/tunein.py --location "Chicago, IL"
+python scripts/tunein.py --location 60601
+```
+
+### Finding the direct stream URL from a call sign
+
+You can use `streema.py`, `tunein.py`, or `iheart.py`.
+
+```
+python scripts/streema.py WFMT
+python scripts/streema.py WGN-AM
+python scripts/tunein.py --callsign WFMT
+```
+
+`tunein.py` and `iheart.py` can also search by station name:
+
+```
+python scripts/tunein.py "jazz"
+python scripts/iheart.py WGCI
+```
+
+### Finding fire, police, weather, etc
+
+You can use `broadcastify.py`.
+
+Search feeds by place or keyword. The results show the feed ID, status, and listener count:
+
+```
+python scripts/broadcastify.py "Cook County"
+python scripts/broadcastify.py "NOAA weather"
+```
+
+Then get the stream URL with the feed ID or the feed name:
+
+```
+python scripts/broadcastify.py --stream 20973
+```
