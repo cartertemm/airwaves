@@ -80,7 +80,9 @@ SCAN_LOW_OFFSET = 100000
 SCAN_HIGH_OFFSET = 600000
 
 KEY_POLL_SECONDS = 0.02
-HELP_TEXT = "space: play/pause, _: volume down, +: volume up, s: back, w: forward, S: scan back, W: scan forward, t: enter frequency, m: mute, i: show/hide signal, h: help, Ctrl+C: quit"
+HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "m: mute", "i: show/hide signal", "h: help", "Ctrl+C: quit")
+HELP_KEYS_PER_LINE = 3
+HELP_TEXT = "\n".join(", ".join(HELP_KEYS[i:i + HELP_KEYS_PER_LINE]) for i in range(0, len(HELP_KEYS), HELP_KEYS_PER_LINE))
 TITLE_LENGTH = 1024
 
 
@@ -631,6 +633,11 @@ def read_key():
 	return key
 
 
+def console_width():
+	"""Returns the longest line that fits the console. A longer line wraps, and \r no longer returns to its start."""
+	return shutil.get_terminal_size().columns - 1
+
+
 def get_title():
 	title = ctypes.create_unicode_buffer(TITLE_LENGTH)
 	ctypes.windll.kernel32.GetConsoleTitleW(title, TITLE_LENGTH)
@@ -675,15 +682,14 @@ class RadioCLI:
 			if self.prompting:
 				return
 			status = self.status_text()
-			# Keep the line shorter than the console, or it wraps and \r no longer returns to its start.
-			width = shutil.get_terminal_size().columns - 1
+			width = console_width()
 			sys.stdout.write("\r" + status[:width].ljust(width))
 			sys.stdout.flush()
 			set_title(status)
 
 	def show_message(self, message):
 		with self.display_lock:
-			sys.stdout.write("\r" + message.ljust(60) + "\n")
+			sys.stdout.write("\r" + " " * console_width() + "\r" + message + "\n")
 		self.show_status()
 
 	def prompt_frequency(self):
