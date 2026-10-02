@@ -136,7 +136,7 @@ import sdr
 
 devices = sdr.list_devices()
 receiver = sdr.Receiver(devices[0].index, 97.9)
-receiver.on_stereo_change = lambda stereo: print("Stereo" if stereo else "Mono")
+receiver.on_status_change = lambda: print(receiver.stereo, receiver.signal_db)
 receiver.start()
 receiver.volume = 70
 receiver.tune(98.7)
@@ -155,5 +155,6 @@ receiver.stop()
 | `volume` | Volume from 0 to 100. |
 | `paused`, `muted` | Pause or mute the audio. |
 | `stereo` | True when the station sends stereo. |
-| `on_stereo_change` | Called with the new stereo state. It runs on a background thread. |
+| `signal_db` | Signal strength: how far the station is above the noise, in whole dB. |
+| `on_status_change` | Called with no arguments when `stereo` or `signal_db` changes. It runs on a background thread. |
 | `running`, `error` | `running` becomes false if the dongle fails, and `error` holds the cause. |

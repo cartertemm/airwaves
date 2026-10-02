@@ -52,7 +52,11 @@ QUEUE_TIMEOUT_SECONDS = 0.5
 # After a retune, the first 1 to 2 ms of samples are noise from the tuner settling.
 SETTLE_FRAMES = AUDIO_RATE * 5 // 1000
 FADE_FRAMES = AUDIO_RATE * 20 // 1000
+# Samples used to measure the signal level, both while scanning and while playing.
 SCAN_SAMPLES = 32768
+SIGNAL_SMOOTHING = 0.3
+# The shown signal level only changes once the measured level moves this far from it, so it does not flicker between two numbers.
+SIGNAL_HYSTERESIS_DB = 1
 # Skip the tuner settling noise after each retune while scanning.
 SCAN_SETTLE_BYTES = 8192
 # HD Radio sidebands sit two channels from a station and 14 dB or more below it.
@@ -93,6 +97,15 @@ def band_for(freq_mhz):
 	return next((band for band in BANDS if band.min_mhz <= round(freq_mhz, 3) <= band.max_mhz), None)
 
 
+def channel_powers(samples, band):
+	"""Returns the noise floor, then the power in the channel at TUNE_OFFSET and in the channels one and two steps below and above it."""
+	power = np.abs(np.fft.fft(samples * np.hanning(len(samples)))) ** 2
+	freqs = np.fft.fftfreq(len(samples), 1 / SDR_RATE)
+	half_width = band.narrow_cutoff or band.step_mhz * 1e6 / 2
+	step = band.step_mhz * 1e6
+	return np.median(power), *(power[np.abs(freqs - TUNE_OFFSET - offset) < half_width].mean() for offset in (0, -step, step, -2 * step, 2 * step))
+
+
 class Demodulator:
 	"""Turns blocks of raw IQ samples at SDR_RATE into audio at AUDIO_RATE for one band."""
 
@@ -122,8 +135,11 @@ class Demodulator:
 		self.window = np.hanning(len(freqs) * 2 - 2)
 		self.pilot_ratio = 0.0
 		self.stereo = False
+		self.signal_db = 0.0
 
 	def process(self, samples):
+		floor, here, *neighbors = channel_powers(samples[:SCAN_SAMPLES], self.band)
+		self.signal_db += SIGNAL_SMOOTHING * (10 * np.log10(here / floor) - self.signal_db)
 		baseband = samples * self.mixer[:len(samples)]
 		baseband, self.channel_state = signal.lfilter(self.channel_taps, 1, baseband, zi=self.channel_state)
 		baseband = baseband[::SDR_DECIMATION]
@@ -235,7 +251,7 @@ def list_devices():
 class Receiver:
 	"""Plays stereo FM from an RTL-SDR dongle through the default sound card.
 
-	Call start() to begin playing and stop() when done. on_stereo_change, if set, is called with the new stereo state from a background thread."""
+	Call start() to begin playing and stop() when done. on_status_change, if set, is called with no arguments from a background thread when stereo or signal_db changes."""
 
 	def __init__(self, device_index, freq_mhz):
 		self.sdr = RtlSdr(device_index=device_index)
@@ -254,7 +270,8 @@ class Receiver:
 		self.is_paused = False
 		self.muted = False
 		self.stereo = False
-		self.on_stereo_change = None
+		self.signal_db = 0
+		self.on_status_change = None
 		self.error = None
 		self.running = True
 		self.audio = pyaudio.PyAudio()
@@ -334,10 +351,11 @@ class Receiver:
 				self.played_tune_count = tune_count
 				self.buffer.cut(FADE_FRAMES)
 				audio[:len(self.fade_in)] *= self.fade_in
-			if self.demodulator.stereo != self.stereo:
-				self.stereo = self.demodulator.stereo
-				if self.on_stereo_change:
-					self.on_stereo_change(self.stereo)
+			stereo, signal_db = self.demodulator.stereo, self.demodulator.signal_db
+			if stereo != self.stereo or abs(signal_db - self.signal_db) >= SIGNAL_HYSTERESIS_DB:
+				self.stereo, self.signal_db = stereo, round(signal_db)
+				if self.on_status_change:
+					self.on_status_change()
 			if not self.is_paused:
 				self.buffer.put(audio)
 			self.raw_blocks.task_done()
@@ -369,12 +387,8 @@ class Receiver:
 		self.sdr.center_freq = round(freq_mhz * 1e6) - TUNE_OFFSET
 		self.sdr.read_bytes(SCAN_SETTLE_BYTES)
 		samples = self.sdr.packed_bytes_to_iq(self.sdr.read_bytes(SCAN_SAMPLES * 2))
-		power = np.abs(np.fft.fft(samples * np.hanning(SCAN_SAMPLES))) ** 2
-		freqs = np.fft.fftfreq(SCAN_SAMPLES, 1 / SDR_RATE)
-		half_width = band.narrow_cutoff or band.step_mhz * 1e6 / 2
-		step = band.step_mhz * 1e6
-		here, below, above, two_below, two_above = (power[np.abs(freqs - TUNE_OFFSET - offset) < half_width].mean() for offset in (0, -step, step, -2 * step, 2 * step))
-		return here > np.median(power) * 10 ** (band.scan_threshold_db / 10) and here >= max(below, above) and here * SCAN_SIDEBAND_RATIO >= max(two_below, two_above)
+		floor, here, below, above, two_below, two_above = channel_powers(samples, band)
+		return here > floor * 10 ** (band.scan_threshold_db / 10) and here >= max(below, above) and here * SCAN_SIDEBAND_RATIO >= max(two_below, two_above)
 
 	def stop(self):
 		self.running = False
@@ -441,13 +455,13 @@ class RadioCLI:
 
 	def __init__(self, receiver):
 		self.receiver = receiver
-		self.receiver.on_stereo_change = lambda stereo: self.show_status()
+		self.receiver.on_status_change = self.show_status
 		self.display_lock = threading.Lock()
 		self.prompting = False
 
 	def status_text(self):
 		receiver = self.receiver
-		parts = [f"{receiver.freq_mhz:.{receiver.band.digits}f} MHz", "Stereo" if receiver.stereo else "Mono", f"Volume {receiver.volume}%"]
+		parts = [f"{receiver.freq_mhz:.{receiver.band.digits}f} MHz", "Stereo" if receiver.stereo else "Mono", f"Signal {receiver.signal_db} dB", f"Volume {receiver.volume}%"]
 		if receiver.muted:
 			parts.append("Muted")
 		if receiver.paused:
