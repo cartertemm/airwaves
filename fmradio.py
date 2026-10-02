@@ -1,25 +1,19 @@
 import argparse
 import collections
-import os
 import queue
 import sys
 import threading
 import time
+from dataclasses import dataclass
 
 import numpy as np
 import pyaudio
-from scipy import signal
-
-# This file shares its name with the pyrtlsdr package, so drop the script folder from the import path.
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path = [path for path in sys.path if os.path.abspath(path or os.curdir) != SCRIPT_DIR]
 from rtlsdr import RtlSdr
 from rtlsdr.librtlsdr import librtlsdr
+from scipy import signal
 
-#MIN_FREQ_MHZ = 87.5
-MAX_FREQ_MHZ = 1500.0
-MIN_FREQ_MHZ = 0.0
-#MAX_FREQ_MHZ = 108.0
+MIN_FREQ_MHZ = 87.5
+MAX_FREQ_MHZ = 108.0
 FREQ_STEP_MHZ = 0.1
 VOLUME_STEP = 10
 DEFAULT_VOLUME = 50
@@ -63,25 +57,6 @@ SETTLE_FRAMES = AUDIO_RATE * 5 // 1000
 FADE_FRAMES = AUDIO_RATE * 20 // 1000
 
 KEY_POLL_SECONDS = 0.02
-
-
-def menu(prompt, items):
-	"""Constructs and shows a simple commandline menu.
-	Returns an index of the provided items sequence."""
-	for i in range(len(items)):
-		print(str(i + 1) + ": " + items[i])
-	result = None
-	while True:
-		result = input(prompt)
-		try:
-			result = int(result)
-		except ValueError:
-			print("error: Input must be a number. Please try again.")
-			continue
-		if result - 1 >= len(items) or result < 1:
-			print("error: Provided option not in range. Please try again.")
-			continue
-		return result - 1
 
 
 class StereoFMDemodulator:
@@ -141,7 +116,7 @@ class StereoFMDemodulator:
 		self.pilot_ratio += PILOT_SMOOTHING * (ratio - self.pilot_ratio)
 		# A Hann windowed sine of amplitude A peaks at A * N / 4.
 		level = 4 * pilot / len(mpx)
-		self.stereo = self.pilot_ratio > STEREO_THRESHOLD and level > PILOT_MIN_LEVEL
+		self.stereo = bool(self.pilot_ratio > STEREO_THRESHOLD and level > PILOT_MIN_LEVEL)
 
 
 class AudioBuffer:
@@ -197,13 +172,30 @@ class AudioBuffer:
 		return out
 
 
+@dataclass
+class Device:
+	index: int
+	name: str
+	serial: str
+
+
+def list_devices():
+	"""Returns the connected RTL-SDR dongles."""
+	count = librtlsdr.rtlsdr_get_device_count()
+	serials = RtlSdr.get_device_serial_addresses() if count else []
+	return [Device(i, librtlsdr.rtlsdr_get_device_name(i).decode(errors="replace"), serial) for i, serial in zip(range(count), serials)]
+
+
 class Receiver:
+	"""Plays stereo FM from an RTL-SDR dongle through the default sound card.
+
+	Call start() to begin playing and stop() when done. on_stereo_change, if set, is called with the new stereo state from a background thread."""
+
 	def __init__(self, device_index, freq_mhz):
 		self.sdr = RtlSdr(device_index=device_index)
 		self.sdr.sample_rate = SDR_RATE
 		self.sdr.gain = "auto"
 		self.sdr_lock = threading.Lock()
-		self.display_lock = threading.Lock()
 		self.demodulator = StereoFMDemodulator()
 		self.raw_blocks = queue.Queue(maxsize=MAX_QUEUED_BLOCKS)
 		self.buffer = AudioBuffer()
@@ -211,17 +203,34 @@ class Receiver:
 		self.tune_count = 0
 		self.played_tune_count = 0
 		self.freq_mhz = None
-		self.volume = DEFAULT_VOLUME
-		self.paused = False
+		self.volume_percent = DEFAULT_VOLUME
+		self.is_paused = False
 		self.muted = False
-		self.prompting = False
-		self.stereo_shown = False
+		self.stereo = False
+		self.on_stereo_change = None
 		self.error = None
 		self.running = True
 		self.audio = pyaudio.PyAudio()
-		self.stream = self.audio.open(format=pyaudio.paFloat32, channels=2, rate=AUDIO_RATE, output=True, stream_callback=self.play)
+		self.stream = self.audio.open(format=pyaudio.paFloat32, channels=2, rate=AUDIO_RATE, output=True, stream_callback=self.fill_audio)
 		self.tune(freq_mhz)
 		self.threads = [threading.Thread(target=self.guard, args=(target,), daemon=True) for target in (self.read, self.demodulate)]
+
+	@property
+	def volume(self):
+		return self.volume_percent
+
+	@volume.setter
+	def volume(self, percent):
+		self.volume_percent = min(MAX_VOLUME, max(0, percent))
+
+	@property
+	def paused(self):
+		return self.is_paused
+
+	@paused.setter
+	def paused(self, paused):
+		self.is_paused = paused
+		self.buffer.clear()
 
 	def start(self):
 		for thread in self.threads:
@@ -262,22 +271,80 @@ class Receiver:
 				self.played_tune_count = tune_count
 				self.buffer.cut(FADE_FRAMES)
 				audio[:len(self.fade_in)] *= self.fade_in
-			if self.demodulator.stereo != self.stereo_shown:
-				self.stereo_shown = self.demodulator.stereo
-				self.show_status()
-			if not self.paused:
+			if self.demodulator.stereo != self.stereo:
+				self.stereo = self.demodulator.stereo
+				if self.on_stereo_change:
+					self.on_stereo_change(self.stereo)
+			if not self.is_paused:
 				self.buffer.put(audio)
 
-	def play(self, in_data, frame_count, time_info, status):
+	def fill_audio(self, in_data, frame_count, time_info, status):
 		audio = self.buffer.get(frame_count)
-		gain = 0 if self.muted or self.paused else self.volume / MAX_VOLUME * OUTPUT_LEVEL
+		gain = 0 if self.muted or self.is_paused else self.volume_percent / MAX_VOLUME * OUTPUT_LEVEL
 		return (audio * gain).tobytes(), pyaudio.paContinue
 
+	def stop(self):
+		self.running = False
+		for thread in self.threads:
+			if thread.is_alive():
+				thread.join()
+		self.stream.stop_stream()
+		self.stream.close()
+		self.audio.terminate()
+		self.sdr.close()
+
+
+def menu(prompt, items):
+	"""Constructs and shows a simple commandline menu.
+	Returns an index of the provided items sequence."""
+	for i in range(len(items)):
+		print(str(i + 1) + ": " + items[i])
+	result = None
+	while True:
+		result = input(prompt)
+		try:
+			result = int(result)
+		except ValueError:
+			print("error: Input must be a number. Please try again.")
+			continue
+		if result - 1 >= len(items) or result < 1:
+			print("error: Provided option not in range. Please try again.")
+			continue
+		return result - 1
+
+
+def read_key():
+	import msvcrt
+	if not msvcrt.kbhit():
+		return None
+	key = msvcrt.getwch()
+	if key in ("\x00", "\xe0"):
+		msvcrt.getwch()
+		return None
+	return key
+
+
+def choose_device(devices):
+	if len(devices) == 1:
+		return devices[0]
+	return devices[menu("Choose a device: ", [f"{device.name} (serial {device.serial})" for device in devices])]
+
+
+class RadioCLI:
+	"""Keyboard controls and a status line for a Receiver."""
+
+	def __init__(self, receiver):
+		self.receiver = receiver
+		self.receiver.on_stereo_change = lambda stereo: self.show_status()
+		self.display_lock = threading.Lock()
+		self.prompting = False
+
 	def status_text(self):
-		parts = [f"{self.freq_mhz:.1f} MHz", "Stereo" if self.stereo_shown else "Mono", f"Volume {self.volume}%"]
-		if self.muted:
+		receiver = self.receiver
+		parts = [f"{receiver.freq_mhz:.1f} MHz", "Stereo" if receiver.stereo else "Mono", f"Volume {receiver.volume}%"]
+		if receiver.muted:
 			parts.append("Muted")
-		if self.paused:
+		if receiver.paused:
 			parts.append("Paused")
 		return " | ".join(parts)
 
@@ -309,65 +376,51 @@ class Receiver:
 		if not MIN_FREQ_MHZ <= freq_mhz <= MAX_FREQ_MHZ:
 			self.show_message("error: Frequency not in range.")
 			return
-		self.tune(freq_mhz)
+		self.receiver.tune(freq_mhz)
 		self.show_status()
 
 	def step(self, direction):
-		freq_mhz = self.freq_mhz + direction * FREQ_STEP_MHZ
+		freq_mhz = self.receiver.freq_mhz + direction * FREQ_STEP_MHZ
 		if MIN_FREQ_MHZ <= round(freq_mhz, 1) <= MAX_FREQ_MHZ:
-			self.tune(freq_mhz)
+			self.receiver.tune(freq_mhz)
 
 	def handle_key(self, key):
+		receiver = self.receiver
 		if key == " ":
-			self.paused = not self.paused
-			self.buffer.clear()
+			receiver.paused = not receiver.paused
 		elif key == "_":
-			self.volume = max(0, self.volume - VOLUME_STEP)
+			receiver.volume -= VOLUME_STEP
 		elif key == "+":
-			self.volume = min(MAX_VOLUME, self.volume + VOLUME_STEP)
+			receiver.volume += VOLUME_STEP
 		elif key == "s":
 			self.step(-1)
 		elif key == "w":
 			self.step(1)
 		elif key == "m":
-			self.muted = not self.muted
+			receiver.muted = not receiver.muted
 		elif key == "t":
 			self.prompt_frequency()
 			return
 		self.show_status()
 
-	def close(self):
-		self.running = False
-		for thread in self.threads:
-			if thread.is_alive():
-				thread.join()
-		self.stream.stop_stream()
-		self.stream.close()
-		self.audio.terminate()
-		self.sdr.close()
-
-
-def read_key():
-	import msvcrt
-	if not msvcrt.kbhit():
-		return None
-	key = msvcrt.getwch()
-	if key in ("\x00", "\xe0"):
-		msvcrt.getwch()
-		return None
-	return key
-
-
-def choose_device():
-	count = librtlsdr.rtlsdr_get_device_count()
-	if count == 0:
-		return None
-	if count == 1:
-		return 0
-	names = [librtlsdr.rtlsdr_get_device_name(i).decode(errors="replace") for i in range(count)]
-	serials = RtlSdr.get_device_serial_addresses()
-	items = [f"{name} (serial {serial})" for name, serial in zip(names, serials)]
-	return menu("Choose a device: ", items)
+	def run(self):
+		print("space: play/pause, _: volume down, +: volume up, s: back, w: forward, t: enter frequency, m: mute, Ctrl+C: quit")
+		self.show_status()
+		self.receiver.start()
+		try:
+			while self.receiver.running:
+				key = read_key()
+				if key is None:
+					time.sleep(KEY_POLL_SECONDS)
+				elif key == "\x03":
+					break
+				else:
+					self.handle_key(key)
+		except KeyboardInterrupt:
+			pass
+		finally:
+			self.receiver.stop()
+			print()
 
 
 def main():
@@ -376,28 +429,12 @@ def main():
 	args = parser.parse_args()
 	if not MIN_FREQ_MHZ <= args.frequency <= MAX_FREQ_MHZ:
 		parser.error(f"frequency must be from {MIN_FREQ_MHZ} to {MAX_FREQ_MHZ} MHz")
-	device_index = choose_device()
-	if device_index is None:
+	devices = list_devices()
+	if not devices:
 		print("error: No RTL-SDR devices found.")
 		return 1
-	receiver = Receiver(device_index, args.frequency)
-	print("space: play/pause, _: volume down, +: volume up, s: back, w: forward, t: enter frequency, m: mute, Ctrl+C: quit")
-	receiver.show_status()
-	receiver.start()
-	try:
-		while receiver.running:
-			key = read_key()
-			if key is None:
-				time.sleep(KEY_POLL_SECONDS)
-			elif key == "\x03":
-				break
-			else:
-				receiver.handle_key(key)
-	except KeyboardInterrupt:
-		pass
-	finally:
-		receiver.close()
-		print()
+	receiver = Receiver(choose_device(devices).index, args.frequency)
+	RadioCLI(receiver).run()
 	if receiver.error:
 		print(f"error: {receiver.error}")
 		return 1
