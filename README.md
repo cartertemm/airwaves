@@ -126,6 +126,14 @@ Aircraft and control towers only transmit when someone talks, so you hear static
 
 If you have more than one dongle, the script asks you to choose one.
 
+The script uses US or European band settings. It picks them from the country in your system settings: the Windows region, or the `LANG` setting on Linux and macOS. If that is not set, it uses US settings. To choose, add `--region us` or `--region eu`:
+
+```
+python sdr.py 97.9 --region eu
+```
+
+In Europe, AM is 531 to 1602 kHz in 9 kHz steps, FM uses 50 microsecond de-emphasis, and there is no NOAA weather radio.
+
 The status line and the window title show the frequency. Press `i` to also show the signal strength. On FM stations that send RDS, they also show the station name and the radio text, which is often the artist and song.
 
 | Key | Action |
@@ -153,7 +161,7 @@ The keys work on Windows only.
 import sdr
 
 devices = sdr.list_devices()
-receiver = sdr.Receiver(devices[0].index, 97.9)
+receiver = sdr.Receiver(devices[0].index, 97.9, region="eu")
 receiver.on_status_change = lambda: print(receiver.rds_name, receiver.rds_text)
 receiver.start()
 receiver.volume = 70
@@ -166,6 +174,7 @@ receiver.stop()
 | Member | Purpose |
 | --- | --- |
 | `list_devices()` | Returns the connected dongles, each with `index`, `name`, and `serial`. |
+| `Receiver(device_index, freq_mhz, region=None)` | Opens a dongle. `region` is `"us"` or `"eu"`. Without it, the receiver uses `detect_region()`, which reads the system's country setting. |
 | `start()`, `stop()` | Start and stop the dongle and audio. |
 | `tune(freq_mhz)`, `freq_mhz` | Change and read the frequency. AM, shortwave, FM, aviation, and NOAA frequencies all work. Other frequencies raise `ValueError`. |
 | `band` | The current band, `sdr.AM`, `sdr.SW`, `sdr.FM`, `sdr.AIR`, or `sdr.NOAA`. |

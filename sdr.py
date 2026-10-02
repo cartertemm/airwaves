@@ -1,12 +1,13 @@
 import argparse
 import collections
 import ctypes
+import locale
 import queue
 import shutil
 import sys
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import pyaudio
@@ -114,19 +115,35 @@ class Band:
 		return self.narrow_cutoff or self.step_mhz * 1e6 / 2
 
 
-# North American de-emphasis. Europe uses 50 microseconds.
 FM = Band(min_mhz=87.5, max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6)
 NOAA = Band(min_mhz=162.4, max_mhz=162.55, step_mhz=0.025, digits=3, max_deviation=5000, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None)
 AM = Band(min_mhz=0.53, max_mhz=1.7, step_mhz=0.01, digits=2, max_deviation=None, narrow_cutoff=5000, audio_cutoff=5000, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13, khz=True)
 # Direct sampling stops at 14.4 MHz, half of the dongle's 28.8 MHz converter rate.
 SW = Band(min_mhz=2.3, max_mhz=14.4, step_mhz=0.005, digits=3, max_deviation=None, narrow_cutoff=4500, audio_cutoff=4500, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13)
 AIR = Band(min_mhz=118.0, max_mhz=136.975, step_mhz=0.025, digits=3, max_deviation=None, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, am=True)
-BANDS = (AM, SW, FM, AIR, NOAA)
+# Europe uses 50 microsecond de-emphasis, a 9 kHz AM channel grid, and has no NOAA weather radio.
+FM_EU = replace(FM, deemphasis_tau=50e-6)
+AM_EU = replace(AM, min_mhz=0.531, max_mhz=1.602, step_mhz=0.009)
+REGIONS = {"us": (AM, SW, FM, AIR, NOAA), "eu": (AM_EU, SW, FM_EU, AIR)}
+EUROPE_COUNTRIES = {"AD", "AL", "AT", "BA", "BE", "BG", "BY", "CH", "CY", "CZ", "DE", "DK", "EE", "ES", "FI", "FO", "FR", "GB", "GI", "GR", "HR", "HU", "IE", "IM", "IS", "IT", "LI", "LT", "LU", "LV", "MC", "MD", "ME", "MK", "MT", "NL", "NO", "PL", "PT", "RO", "RS", "RU", "SE", "SI", "SK", "SM", "UA", "VA", "XK"}
+GEO_NAME_LENGTH = 16
 
 
-def band_for(freq_mhz):
-	"""Returns the band that holds freq_mhz, or None."""
-	return next((band for band in BANDS if band.min_mhz <= round(freq_mhz, 3) <= band.max_mhz), None)
+def band_for(freq_mhz, bands):
+	"""Returns the band in bands that holds freq_mhz, or None."""
+	return next((band for band in bands if band.min_mhz <= round(freq_mhz, 3) <= band.max_mhz), None)
+
+
+def detect_region():
+	"""Guesses "eu" or "us" from the system's country setting, and falls back to "us"."""
+	if sys.platform == "win32":
+		country = ctypes.create_unicode_buffer(GEO_NAME_LENGTH)
+		ctypes.windll.kernel32.GetUserDefaultGeoName(country, GEO_NAME_LENGTH)
+		country = country.value
+	else:
+		# Locales look like en_GB.UTF-8, or C when no country is set.
+		country = (locale.getlocale()[0] or "").partition("_")[2]
+	return "eu" if country.upper() in EUROPE_COUNTRIES else "us"
 
 
 class Spectrum:
@@ -441,7 +458,8 @@ class Receiver:
 
 	Call start() to begin playing and stop() when done. on_status_change, if set, is called with no arguments from a background thread when stereo, signal_db, rds_name, or rds_text changes."""
 
-	def __init__(self, device_index, freq_mhz):
+	def __init__(self, device_index, freq_mhz, region=None):
+		self.bands = REGIONS[region or detect_region()]
 		self.sdr = RtlSdr(device_index=device_index)
 		self.sdr.sample_rate = SDR_RATE
 		self.sdr.gain = SDR_GAIN
@@ -491,7 +509,7 @@ class Receiver:
 			thread.start()
 
 	def tune(self, freq_mhz):
-		band = band_for(freq_mhz)
+		band = band_for(freq_mhz, self.bands)
 		if band is None:
 			raise ValueError(f"{freq_mhz} MHz is not in a supported band")
 		freq_mhz = round(freq_mhz, 3)
@@ -648,7 +666,8 @@ def set_title(title):
 	ctypes.windll.kernel32.SetConsoleTitleW(title)
 
 
-BAND_RANGES = " or ".join(f"{band.min_mhz} to {band.max_mhz}" for band in BANDS)
+def band_ranges(bands):
+	return " or ".join(f"{band.min_mhz} to {band.max_mhz}" for band in bands)
 
 
 def choose_device(devices):
@@ -697,7 +716,7 @@ class RadioCLI:
 			self.prompting = True
 			sys.stdout.write("\n")
 		try:
-			text = input(f"Frequency in MHz ({BAND_RANGES}): ")
+			text = input(f"Frequency in MHz ({band_ranges(self.receiver.bands)}): ")
 		finally:
 			self.prompting = False
 		try:
@@ -705,7 +724,7 @@ class RadioCLI:
 		except ValueError:
 			self.show_message("error: Input must be a number.")
 			return
-		if band_for(freq_mhz) is None:
+		if band_for(freq_mhz, self.receiver.bands) is None:
 			self.show_message("error: Frequency not in range.")
 			return
 		self.receiver.tune(freq_mhz)
@@ -720,7 +739,7 @@ class RadioCLI:
 
 	def step(self, direction):
 		freq_mhz = self.receiver.freq_mhz + direction * self.receiver.band.step_mhz
-		if band_for(freq_mhz) is self.receiver.band:
+		if band_for(freq_mhz, self.receiver.bands) is self.receiver.band:
 			self.receiver.tune(freq_mhz)
 
 	def handle_key(self, key):
@@ -775,15 +794,17 @@ class RadioCLI:
 
 def main():
 	parser = argparse.ArgumentParser(description="Listen to AM, FM, or NOAA weather radio with an RTL-SDR dongle.")
-	parser.add_argument("frequency", type=float, nargs="?", default=FM.min_mhz, help=f"Frequency in MHz, AM, FM, or NOAA weather radio. Default is {FM.min_mhz}.")
+	parser.add_argument("frequency", type=float, nargs="?", default=FM.min_mhz, help=f"Frequency in MHz. Default is {FM.min_mhz}.")
+	parser.add_argument("--region", choices=REGIONS, help="Band plan to use. Default is from the system's country setting.")
 	args = parser.parse_args()
-	if band_for(args.frequency) is None:
-		parser.error(f"frequency must be from {BAND_RANGES} MHz")
+	region = args.region or detect_region()
+	if band_for(args.frequency, REGIONS[region]) is None:
+		parser.error(f"frequency must be from {band_ranges(REGIONS[region])} MHz")
 	devices = list_devices()
 	if not devices:
 		print("error: No RTL-SDR devices found.")
 		return 1
-	receiver = Receiver(choose_device(devices).index, args.frequency)
+	receiver = Receiver(choose_device(devices).index, args.frequency, region)
 	RadioCLI(receiver).run()
 	if receiver.error:
 		print(f"error: {receiver.error}")
