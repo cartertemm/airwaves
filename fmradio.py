@@ -48,6 +48,12 @@ QUEUE_TIMEOUT_SECONDS = 0.5
 # After a retune, the first 1 to 2 ms of samples are noise from the tuner settling.
 SETTLE_FRAMES = AUDIO_RATE * 5 // 1000
 FADE_FRAMES = AUDIO_RATE * 20 // 1000
+SCAN_SAMPLES = 32768
+# Skip the tuner settling noise after each retune while scanning.
+SCAN_SETTLE_BYTES = 8192
+SCAN_THRESHOLD = 10 ** (5 / 10)
+# HD Radio sidebands sit two channels from a station and 14 dB or more below it.
+SCAN_SIDEBAND_RATIO = 10 ** (10 / 10)
 
 KEY_POLL_SECONDS = 0.02
 
@@ -315,6 +321,31 @@ class Receiver:
 		gain = 0 if self.muted or self.is_paused else self.volume_percent / MAX_VOLUME * OUTPUT_LEVEL
 		return (audio * gain).tobytes(), pyaudio.paContinue
 
+	def seek(self, direction):
+		"""Tunes to the next station up (direction 1) or down (direction -1) in the current band, wrapping at the band edges.
+
+		Blocks while scanning. Returns the new frequency, or None if no other station was found."""
+		band = self.band
+		count = round((band.max_mhz - band.min_mhz) / band.step_mhz) + 1
+		start = round((self.freq_mhz - band.min_mhz) / band.step_mhz)
+		channels = (round(band.min_mhz + (start + direction * i) % count * band.step_mhz, 3) for i in range(1, count))
+		with self.sdr_lock:
+			found = next((freq_mhz for freq_mhz in channels if self.has_station(freq_mhz, band)), None)
+		self.tune(self.freq_mhz if found is None else found)
+		return found
+
+	def has_station(self, freq_mhz, band):
+		"""Checks for a signal that is above the noise, stronger than the channels next to it, and not a sideband of a station two channels away. Call with sdr_lock held."""
+		self.sdr.center_freq = round(freq_mhz * 1e6) - TUNE_OFFSET
+		self.sdr.read_bytes(SCAN_SETTLE_BYTES)
+		samples = self.sdr.packed_bytes_to_iq(self.sdr.read_bytes(SCAN_SAMPLES * 2))
+		power = np.abs(np.fft.fft(samples * np.hanning(SCAN_SAMPLES))) ** 2
+		freqs = np.fft.fftfreq(SCAN_SAMPLES, 1 / SDR_RATE)
+		half_width = band.narrow_cutoff or band.step_mhz * 1e6 / 2
+		step = band.step_mhz * 1e6
+		here, below, above, two_below, two_above = (power[np.abs(freqs - TUNE_OFFSET - offset) < half_width].mean() for offset in (0, -step, step, -2 * step, 2 * step))
+		return here > np.median(power) * SCAN_THRESHOLD and here >= max(below, above) and here * SCAN_SIDEBAND_RATIO >= max(two_below, two_above)
+
 	def stop(self):
 		self.running = False
 		for thread in self.threads:
@@ -414,6 +445,13 @@ class RadioCLI:
 		self.receiver.tune(freq_mhz)
 		self.show_status()
 
+	def seek(self, direction):
+		with self.display_lock:
+			sys.stdout.write("\r" + "Scanning...".ljust(60))
+			sys.stdout.flush()
+		if self.receiver.seek(direction) is None:
+			self.show_message("No other station found.")
+
 	def step(self, direction):
 		freq_mhz = self.receiver.freq_mhz + direction * self.receiver.band.step_mhz
 		if band_for(freq_mhz) is self.receiver.band:
@@ -431,6 +469,10 @@ class RadioCLI:
 			self.step(-1)
 		elif key == "w":
 			self.step(1)
+		elif key == "S":
+			self.seek(-1)
+		elif key == "W":
+			self.seek(1)
 		elif key == "m":
 			receiver.muted = not receiver.muted
 		elif key == "t":
@@ -439,7 +481,7 @@ class RadioCLI:
 		self.show_status()
 
 	def run(self):
-		print("space: play/pause, _: volume down, +: volume up, s: back, w: forward, t: enter frequency, m: mute, Ctrl+C: quit")
+		print("space: play/pause, _: volume down, +: volume up, s: back, w: forward, S: scan back, W: scan forward, t: enter frequency, m: mute, Ctrl+C: quit")
 		self.show_status()
 		self.receiver.start()
 		try:

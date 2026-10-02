@@ -111,6 +111,8 @@ If you have more than one dongle, the script asks you to choose one.
 | `+` | Volume up |
 | `s` | Go back one step (0.1 MHz on FM, 25 kHz on weather radio) |
 | `w` | Go forward one step |
+| `S` (Shift+S) | Scan back to the previous station |
+| `W` (Shift+W) | Scan forward to the next station |
 | `t` | Type a frequency in MHz |
 | `m` | Mute or unmute |
 | Ctrl+C | Quit |
@@ -141,6 +143,7 @@ receiver.stop()
 | `start()`, `stop()` | Start and stop the dongle and audio. |
 | `tune(freq_mhz)`, `freq_mhz` | Change and read the frequency. FM and NOAA frequencies both work. Other frequencies raise `ValueError`. |
 | `band` | The current band, `fmradio.FM` or `fmradio.NOAA`. |
+| `seek(direction)` | Scans up (`1`) or down (`-1`) to the next station in the band and tunes to it. It wraps at the band edges, blocks while scanning (about 1 second), and returns the new frequency, or `None` if it found no other station. |
 | `volume` | Volume from 0 to 100. |
 | `paused`, `muted` | Pause or mute the audio. |
 | `stereo` | True when the station sends stereo. |
