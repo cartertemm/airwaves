@@ -80,6 +80,7 @@ SCAN_LOW_OFFSET = 100000
 SCAN_HIGH_OFFSET = 600000
 
 KEY_POLL_SECONDS = 0.02
+HELP_TEXT = "space: play/pause, _: volume down, +: volume up, s: back, w: forward, S: scan back, W: scan forward, t: enter frequency, m: mute, i: show/hide signal, h: help, Ctrl+C: quit"
 TITLE_LENGTH = 1024
 
 
@@ -736,6 +737,9 @@ class RadioCLI:
 			receiver.muted = not receiver.muted
 		elif key == "i":
 			self.show_signal = not self.show_signal
+		elif key == "h":
+			self.show_message(HELP_TEXT)
+			return
 		elif key == "t":
 			self.prompt_frequency()
 			return
@@ -743,7 +747,7 @@ class RadioCLI:
 
 	def run(self):
 		original_title = get_title()
-		print("space: play/pause, _: volume down, +: volume up, s: back, w: forward, S: scan back, W: scan forward, t: enter frequency, m: mute, i: show/hide signal, Ctrl+C: quit")
+		print(HELP_TEXT)
 		self.show_status()
 		self.receiver.start()
 		try:

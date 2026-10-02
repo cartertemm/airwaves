@@ -140,6 +140,7 @@ The status line and the window title show the frequency. Press `i` to also show 
 | `t` | Type a frequency in MHz |
 | `m` | Mute or unmute |
 | `i` | Show or hide the signal strength |
+| `h` | List the keys |
 | Ctrl+C | Quit |
 
 The keys work on Windows only.
