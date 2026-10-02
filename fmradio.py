@@ -226,7 +226,7 @@ class Receiver:
 		self.sdr = RtlSdr(device_index=device_index)
 		self.sdr.sample_rate = SDR_RATE
 		self.sdr.gain = "auto"
-		self.sdr_lock = threading.Lock()
+		self.sdr_lock = threading.RLock()
 		self.band = None
 		self.demodulator = None
 		self.raw_blocks = queue.Queue(maxsize=MAX_QUEUED_BLOCKS)
@@ -315,6 +315,7 @@ class Receiver:
 					self.on_stereo_change(self.stereo)
 			if not self.is_paused:
 				self.buffer.put(audio)
+			self.raw_blocks.task_done()
 
 	def fill_audio(self, in_data, frame_count, time_info, status):
 		audio = self.buffer.get(frame_count)
@@ -330,8 +331,12 @@ class Receiver:
 		start = round((self.freq_mhz - band.min_mhz) / band.step_mhz)
 		channels = (round(band.min_mhz + (start + direction * i) % count * band.step_mhz, 3) for i in range(1, count))
 		with self.sdr_lock:
+			# Fade out the current station. Wait for the block being decoded first, or it would play after the fade.
+			self.raw_blocks.join()
+			self.buffer.cut(FADE_FRAMES)
 			found = next((freq_mhz for freq_mhz in channels if self.has_station(freq_mhz, band)), None)
-		self.tune(self.freq_mhz if found is None else found)
+			# Tune before releasing the lock, so no block is read at the new frequency under the old tune count.
+			self.tune(self.freq_mhz if found is None else found)
 		return found
 
 	def has_station(self, freq_mhz, band):
