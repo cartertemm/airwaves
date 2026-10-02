@@ -620,10 +620,11 @@ class RadioCLI:
 		self.receiver.on_status_change = self.show_status
 		self.display_lock = threading.Lock()
 		self.prompting = False
+		self.show_signal = False
 
 	def status_text(self):
 		receiver = self.receiver
-		parts = [f"{receiver.freq_mhz:.{receiver.band.digits}f} MHz", receiver.rds_name, "Stereo" if receiver.stereo else "Mono", f"Signal {receiver.signal_db} dB", f"Volume {receiver.volume}%"]
+		parts = [f"{receiver.freq_mhz:.{receiver.band.digits}f} MHz", f"Signal {receiver.signal_db} dB" if self.show_signal else "", receiver.rds_name]
 		if receiver.muted:
 			parts.append("Muted")
 		if receiver.paused:
@@ -696,6 +697,8 @@ class RadioCLI:
 			self.seek(1)
 		elif key == "m":
 			receiver.muted = not receiver.muted
+		elif key == "i":
+			self.show_signal = not self.show_signal
 		elif key == "t":
 			self.prompt_frequency()
 			return
@@ -703,7 +706,7 @@ class RadioCLI:
 
 	def run(self):
 		original_title = get_title()
-		print("space: play/pause, _: volume down, +: volume up, s: back, w: forward, S: scan back, W: scan forward, t: enter frequency, m: mute, Ctrl+C: quit")
+		print("space: play/pause, _: volume down, +: volume up, s: back, w: forward, S: scan back, W: scan forward, t: enter frequency, m: mute, i: show/hide signal, Ctrl+C: quit")
 		self.show_status()
 		self.receiver.start()
 		try:

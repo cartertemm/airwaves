@@ -112,7 +112,7 @@ AM uses the dongle's direct sampling mode. Some dongles need a hardware change b
 
 If you have more than one dongle, the script asks you to choose one.
 
-The status line and the window title show the frequency, signal strength, and volume. On FM stations that send RDS, they also show the station name and the radio text, which is often the artist and song.
+The status line and the window title show the frequency. Press `i` to also show the signal strength. On FM stations that send RDS, they also show the station name and the radio text, which is often the artist and song.
 
 | Key | Action |
 | --- | --- |
@@ -125,6 +125,7 @@ The status line and the window title show the frequency, signal strength, and vo
 | `W` (Shift+W) | Scan forward to the next station |
 | `t` | Type a frequency in MHz |
 | `m` | Mute or unmute |
+| `i` | Show or hide the signal strength |
 | Ctrl+C | Quit |
 
 The keys work on Windows only.
