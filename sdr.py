@@ -1,5 +1,6 @@
 import argparse
 import collections
+import ctypes
 import queue
 import sys
 import threading
@@ -58,6 +59,7 @@ SCAN_SETTLE_BYTES = 8192
 SCAN_SIDEBAND_RATIO = 10 ** (10 / 10)
 
 KEY_POLL_SECONDS = 0.02
+TITLE_LENGTH = 1024
 
 
 @dataclass(frozen=True)
@@ -415,6 +417,16 @@ def read_key():
 	return key
 
 
+def get_title():
+	title = ctypes.create_unicode_buffer(TITLE_LENGTH)
+	ctypes.windll.kernel32.GetConsoleTitleW(title, TITLE_LENGTH)
+	return title.value
+
+
+def set_title(title):
+	ctypes.windll.kernel32.SetConsoleTitleW(title)
+
+
 BAND_RANGES = " or ".join(f"{band.min_mhz} to {band.max_mhz}" for band in BANDS)
 
 
@@ -446,8 +458,10 @@ class RadioCLI:
 		with self.display_lock:
 			if self.prompting:
 				return
-			sys.stdout.write("\r" + self.status_text().ljust(60))
+			status = self.status_text()
+			sys.stdout.write("\r" + status.ljust(60))
 			sys.stdout.flush()
+			set_title(status)
 
 	def show_message(self, message):
 		with self.display_lock:
@@ -509,6 +523,7 @@ class RadioCLI:
 		self.show_status()
 
 	def run(self):
+		original_title = get_title()
 		print("space: play/pause, _: volume down, +: volume up, s: back, w: forward, S: scan back, W: scan forward, t: enter frequency, m: mute, Ctrl+C: quit")
 		self.show_status()
 		self.receiver.start()
@@ -525,6 +540,7 @@ class RadioCLI:
 			pass
 		finally:
 			self.receiver.stop()
+			set_title(original_title)
 			print()
 
 
