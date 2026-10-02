@@ -18,7 +18,7 @@ Here is a list of the available scripts:
 | `iheart.py` | iHeartRadio | Searches iHeartRadio stations and prints their stream URLs. |
 | `streema.py` | Streema | Prints the direct stream URL for a call sign. |
 | `broadcastify.py` | Broadcastify | Searches scanner feeds (fire, police, weather, and more) and prints their stream URLs. |
-| `sdr.py` | RTL-SDR dongle | Plays AM radio, FM stereo radio, and NOAA weather radio from an RTL-SDR USB dongle. |
+| `sdr.py` | RTL-SDR dongle | Plays AM radio, FM stereo radio, aviation radio, and NOAA weather radio from an RTL-SDR USB dongle. |
 
 If you run a script with no arguments, it asks you for input.
 
@@ -81,7 +81,7 @@ Then get the stream URL with the feed ID or the feed name:
 python broadcastify.py --stream 20973
 ```
 
-## Listening to AM, FM, or weather radio with an RTL-SDR dongle
+## Listening to AM, FM, aviation, or weather radio with an RTL-SDR dongle
 
 You can use `sdr.py`. It needs some packages:
 
@@ -110,6 +110,14 @@ python sdr.py 1.4
 
 AM uses the dongle's direct sampling mode. Some dongles need a hardware change before direct sampling picks up anything.
 
+The aviation band is 118.000 to 136.975 MHz, in 25 kHz channels:
+
+```
+python sdr.py 127.575
+```
+
+Aircraft and control towers only transmit when someone talks, so you hear static between transmissions.
+
 If you have more than one dongle, the script asks you to choose one.
 
 The status line and the window title show the frequency. Press `i` to also show the signal strength. On FM stations that send RDS, they also show the station name and the radio text, which is often the artist and song.
@@ -119,7 +127,7 @@ The status line and the window title show the frequency. Press `i` to also show 
 | Space | Play or pause |
 | `_` | Volume down |
 | `+` | Volume up |
-| `s` | Go back one step (10 kHz on AM, 0.1 MHz on FM, 25 kHz on weather radio) |
+| `s` | Go back one step (10 kHz on AM, 0.1 MHz on FM, 25 kHz on aviation and weather radio) |
 | `w` | Go forward one step |
 | `S` (Shift+S) | Scan back to the previous station |
 | `W` (Shift+W) | Scan forward to the next station |
@@ -152,8 +160,8 @@ receiver.stop()
 | --- | --- |
 | `list_devices()` | Returns the connected dongles, each with `index`, `name`, and `serial`. |
 | `start()`, `stop()` | Start and stop the dongle and audio. |
-| `tune(freq_mhz)`, `freq_mhz` | Change and read the frequency. AM, FM, and NOAA frequencies all work. Other frequencies raise `ValueError`. |
-| `band` | The current band, `sdr.AM`, `sdr.FM`, or `sdr.NOAA`. |
+| `tune(freq_mhz)`, `freq_mhz` | Change and read the frequency. AM, FM, aviation, and NOAA frequencies all work. Other frequencies raise `ValueError`. |
+| `band` | The current band, `sdr.AM`, `sdr.FM`, `sdr.AIR`, or `sdr.NOAA`. |
 | `seek(direction)` | Scans up (`1`) or down (`-1`) to the next station in the band and tunes to it. It wraps at the band edges, blocks while scanning (about 1 second), and returns the new frequency, or `None` if it found no other station. |
 | `volume` | Volume from 0 to 100. |
 | `paused`, `muted` | Pause or mute the audio. |
