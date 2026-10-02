@@ -2,6 +2,7 @@ import argparse
 import collections
 import ctypes
 import queue
+import shutil
 import sys
 import threading
 import time
@@ -44,6 +45,19 @@ PILOT_MIN_LEVEL = 0.02
 PILOT_SMOOTHING = 0.3
 # Removes the AM carrier level, which is everything below about 20 Hz.
 DC_BLOCK_POLE = 1 - 2 * np.pi * 20 / MPX_RATE
+RDS_FREQ = 57000
+RDS_HALF_WIDTH = 2400
+# The RDS bit clock is the pilot divided by 16, so one bit lasts 16 pilot cycles.
+RDS_BIT_PHASE = 16 * 2 * np.pi
+RDS_TIMING_STEPS = 16
+RDS_AXIS_SMOOTHING = 0.9
+RDS_BLOCK_BITS = 26
+RDS_POLYNOMIAL = 0x1B9
+# Offset words for blocks A, B, C or C', and D.
+RDS_OFFSETS = ((0x0FC,), (0x198,), (0x168, 0x350), (0x1B4,))
+RDS_SYNC_LOSS_BLOCKS = 10
+RDS_NAME_LENGTH = 8
+RDS_TEXT_END = "\r"
 # The dongle delivers audio in bursts, so hold some back to keep the sound card fed between bursts.
 PREFILL_FRAMES = AUDIO_RATE // 4
 MAX_BUFFER_FRAMES = AUDIO_RATE
@@ -106,6 +120,144 @@ def channel_powers(samples, band):
 	return np.median(power), *(power[np.abs(freqs - TUNE_OFFSET - offset) < half_width].mean() for offset in (0, -step, step, -2 * step, 2 * step))
 
 
+def rds_checkword(data):
+	"""Returns the 10 bit checkword for 16 data bits, before the offset word is added."""
+	check = 0
+	for i in range(15, -1, -1):
+		feedback = ((data >> i) ^ (check >> 9)) & 1
+		check = (check << 1) & 0x3FF
+		if feedback:
+			check ^= RDS_POLYNOMIAL
+	return check
+
+
+def rds_chars(word):
+	return [chr(byte) if 0x20 <= byte < 0x7F or chr(byte) == RDS_TEXT_END else " " for byte in (word >> 8, word & 0xFF)]
+
+
+class RdsDecoder:
+	"""Decodes the station name and radio text from the RDS signal of one FM station."""
+
+	def __init__(self):
+		self.taps = signal.firwin(PILOT_TAPS, [RDS_FREQ - RDS_HALF_WIDTH, RDS_FREQ + RDS_HALF_WIDTH], pass_zero=False, fs=MPX_RATE)
+		self.state = np.zeros(PILOT_TAPS - 1)
+		self.reset()
+
+	def reset(self):
+		self.theta = None
+		self.baseband = np.zeros(0, dtype=complex)
+		self.bit_phase = np.zeros(0)
+		self.timing = None
+		self.axis = 0j
+		self.last_symbol = False
+		self.register = 0
+		self.position = None
+		self.bit_count = 0
+		self.bad_blocks = 0
+		self.group = [None] * 4
+		self.name_chars = [" "] * RDS_NAME_LENGTH
+		self.name_segments = 0
+		self.name_frame = None
+		self.text_chars = []
+		self.text_segments = set()
+		self.text_flag = None
+		self.name = ""
+		self.text = ""
+
+	def process(self, mpx, pilot):
+		"""Takes the multiplex signal and the analytic pilot, which the band-pass filter here delays by the same amount."""
+		rds, self.state = signal.lfilter(self.taps, 1, mpx, zi=self.state)
+		angles = np.angle(pilot)
+		theta = np.unwrap(np.concatenate(([angles[0] if self.theta is None else self.theta], angles)))[1:]
+		self.theta = theta[-1]
+		# The 57 kHz carrier is the third harmonic of the pilot.
+		carrier = (pilot / np.maximum(np.abs(pilot), 1e-12)) ** 3
+		self.baseband = np.concatenate((self.baseband, rds * np.conj(carrier)))
+		self.bit_phase = np.concatenate((self.bit_phase, theta / RDS_BIT_PHASE))
+		if self.timing is None:
+			self.timing = max(np.arange(RDS_TIMING_STEPS) / RDS_TIMING_STEPS, key=lambda timing: np.abs(self.integrate(timing)[0]).sum())
+		bits, incomplete = self.integrate(self.timing)
+		self.baseband, self.bit_phase = self.baseband[incomplete], self.bit_phase[incomplete]
+		self.axis = RDS_AXIS_SMOOTHING * self.axis + (bits ** 2).sum()
+		symbols = (bits * np.exp(-0.5j * np.angle(self.axis))).real > 0
+		# Each bit is sent as the change from the previous symbol.
+		for bit in symbols != np.concatenate(([self.last_symbol], symbols[:-1])):
+			self.receive_bit(int(bit))
+		self.last_symbol = symbols[-1]
+
+	def integrate(self, timing):
+		"""Returns each complete bit as its first half minus its second half, and which samples belong to the last, incomplete bit."""
+		position = self.bit_phase - timing
+		index = np.floor(position).astype(int)
+		index -= index[0]
+		weights = self.baseband * np.where(position - np.floor(position) < 0.5, 1, -1)
+		bits = np.bincount(index, weights.real) + 1j * np.bincount(index, weights.imag)
+		return bits[:-1], index == index[-1]
+
+	def receive_bit(self, bit):
+		self.register = ((self.register << 1) | bit) & ((1 << RDS_BLOCK_BITS) - 1)
+		syndrome = (self.register & 0x3FF) ^ rds_checkword(self.register >> 10)
+		if self.position is None:
+			self.position = next((position for position, offsets in enumerate(RDS_OFFSETS) if syndrome in offsets), None)
+			if self.position is not None:
+				self.bit_count = 0
+				self.bad_blocks = 0
+				self.store(self.register >> 10)
+			return
+		self.bit_count += 1
+		if self.bit_count < RDS_BLOCK_BITS:
+			return
+		self.bit_count = 0
+		self.position = (self.position + 1) % 4
+		if syndrome in RDS_OFFSETS[self.position]:
+			self.bad_blocks = 0
+			self.store(self.register >> 10)
+			return
+		self.group[self.position] = None
+		self.bad_blocks += 1
+		if self.bad_blocks >= RDS_SYNC_LOSS_BLOCKS:
+			self.position = None
+
+	def store(self, data):
+		if self.position == 0:
+			self.group = [data, None, None, None]
+			return
+		self.group[self.position] = data
+		if self.position == 3 and None not in self.group:
+			self.parse(*self.group)
+
+	def parse(self, a, b, c, d):
+		group_type, version_b = b >> 12, (b >> 11) & 1
+		if group_type == 0:
+			segment = b & 0x3
+			# Stations send the name in order, and some scroll text through it, so start over at each first segment to avoid mixing two names.
+			if segment == 0:
+				self.name_segments = 0
+			self.name_chars[segment * 2:segment * 2 + 2] = rds_chars(d)
+			self.name_segments |= 1 << segment
+			if self.name_segments == 0xF:
+				# A station can change the text partway through sending it, so only show a name once it arrives the same way twice in a row.
+				frame = "".join(self.name_chars)
+				if frame == self.name_frame:
+					self.name = frame.strip()
+				self.name_frame = frame
+				self.name_segments = 0
+		elif group_type == 2:
+			chars = rds_chars(d) if version_b else rds_chars(c) + rds_chars(d)
+			flag = (b >> 4) & 1
+			if flag != self.text_flag:
+				self.text_flag = flag
+				self.text_chars = [" "] * 16 * len(chars)
+				self.text_segments = set()
+			segment = b & 0xF
+			self.text_chars[segment * len(chars):(segment + 1) * len(chars)] = chars
+			self.text_segments.add(segment)
+			text = "".join(self.text_chars)
+			end = text.find(RDS_TEXT_END) if RDS_TEXT_END in text else len(text)
+			if self.text_segments >= set(range((end + len(chars) - 1) // len(chars))):
+				self.text = text[:end].strip()
+
+
 class Demodulator:
 	"""Turns blocks of raw IQ samples at SDR_RATE into audio at AUDIO_RATE for one band."""
 
@@ -136,6 +288,7 @@ class Demodulator:
 		self.pilot_ratio = 0.0
 		self.stereo = False
 		self.signal_db = 0.0
+		self.rds = RdsDecoder()
 
 	def process(self, samples):
 		floor, here, *neighbors = channel_powers(samples[:SCAN_SAMPLES], self.band)
@@ -158,6 +311,11 @@ class Demodulator:
 		delayed = np.concatenate((self.pilot_delay, mpx))
 		self.pilot_delay = delayed[len(mpx):]
 		delayed = delayed[:len(mpx)]
+		# RDS takes its carrier and bit clock from the stereo pilot, so it only runs while there is one.
+		if self.stereo:
+			self.rds.process(mpx, pilot)
+		else:
+			self.rds.reset()
 		# For a pilot of sin(t), the squared analytic pilot is -exp(2jt), so this gives the sin(2t) subcarrier.
 		squared = pilot * pilot
 		carrier = -np.imag(squared) / np.maximum(np.abs(squared), 1e-12)
@@ -251,7 +409,7 @@ def list_devices():
 class Receiver:
 	"""Plays stereo FM from an RTL-SDR dongle through the default sound card.
 
-	Call start() to begin playing and stop() when done. on_status_change, if set, is called with no arguments from a background thread when stereo or signal_db changes."""
+	Call start() to begin playing and stop() when done. on_status_change, if set, is called with no arguments from a background thread when stereo, signal_db, rds_name, or rds_text changes."""
 
 	def __init__(self, device_index, freq_mhz):
 		self.sdr = RtlSdr(device_index=device_index)
@@ -271,6 +429,8 @@ class Receiver:
 		self.muted = False
 		self.stereo = False
 		self.signal_db = 0
+		self.rds_name = ""
+		self.rds_text = ""
 		self.on_status_change = None
 		self.error = None
 		self.running = True
@@ -349,11 +509,13 @@ class Receiver:
 			audio = self.demodulator.process(self.sdr.packed_bytes_to_iq(raw)).astype(np.float32)
 			if tune_count != self.played_tune_count:
 				self.played_tune_count = tune_count
+				self.demodulator.rds.reset()
 				self.buffer.cut(FADE_FRAMES)
 				audio[:len(self.fade_in)] *= self.fade_in
-			stereo, signal_db = self.demodulator.stereo, self.demodulator.signal_db
-			if stereo != self.stereo or abs(signal_db - self.signal_db) >= SIGNAL_HYSTERESIS_DB:
-				self.stereo, self.signal_db = stereo, round(signal_db)
+			status = (self.demodulator.stereo, self.demodulator.rds.name, self.demodulator.rds.text)
+			signal_db = self.demodulator.signal_db
+			if status != (self.stereo, self.rds_name, self.rds_text) or abs(signal_db - self.signal_db) >= SIGNAL_HYSTERESIS_DB:
+				(self.stereo, self.rds_name, self.rds_text), self.signal_db = status, round(signal_db)
 				if self.on_status_change:
 					self.on_status_change()
 			if not self.is_paused:
@@ -461,19 +623,22 @@ class RadioCLI:
 
 	def status_text(self):
 		receiver = self.receiver
-		parts = [f"{receiver.freq_mhz:.{receiver.band.digits}f} MHz", "Stereo" if receiver.stereo else "Mono", f"Signal {receiver.signal_db} dB", f"Volume {receiver.volume}%"]
+		parts = [f"{receiver.freq_mhz:.{receiver.band.digits}f} MHz", receiver.rds_name, "Stereo" if receiver.stereo else "Mono", f"Signal {receiver.signal_db} dB", f"Volume {receiver.volume}%"]
 		if receiver.muted:
 			parts.append("Muted")
 		if receiver.paused:
 			parts.append("Paused")
-		return " | ".join(parts)
+		parts.append(receiver.rds_text)
+		return " | ".join(part for part in parts if part)
 
 	def show_status(self):
 		with self.display_lock:
 			if self.prompting:
 				return
 			status = self.status_text()
-			sys.stdout.write("\r" + status.ljust(60))
+			# Keep the line shorter than the console, or it wraps and \r no longer returns to its start.
+			width = shutil.get_terminal_size().columns - 1
+			sys.stdout.write("\r" + status[:width].ljust(width))
 			sys.stdout.flush()
 			set_title(status)
 

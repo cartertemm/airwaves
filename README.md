@@ -112,6 +112,8 @@ AM uses the dongle's direct sampling mode. Some dongles need a hardware change b
 
 If you have more than one dongle, the script asks you to choose one.
 
+The status line and the window title show the frequency, signal strength, and volume. On FM stations that send RDS, they also show the station name and the radio text, which is often the artist and song.
+
 | Key | Action |
 | --- | --- |
 | Space | Play or pause |
@@ -136,7 +138,7 @@ import sdr
 
 devices = sdr.list_devices()
 receiver = sdr.Receiver(devices[0].index, 97.9)
-receiver.on_status_change = lambda: print(receiver.stereo, receiver.signal_db)
+receiver.on_status_change = lambda: print(receiver.rds_name, receiver.rds_text)
 receiver.start()
 receiver.volume = 70
 receiver.tune(98.7)
@@ -156,5 +158,6 @@ receiver.stop()
 | `paused`, `muted` | Pause or mute the audio. |
 | `stereo` | True when the station sends stereo. |
 | `signal_db` | Signal strength: how far the station is above the noise, in whole dB. |
-| `on_status_change` | Called with no arguments when `stereo` or `signal_db` changes. It runs on a background thread. |
+| `rds_name`, `rds_text` | The station name and radio text sent with RDS, or empty text. FM stereo stations only. |
+| `on_status_change` | Called with no arguments when `stereo`, `signal_db`, `rds_name`, or `rds_text` changes. It runs on a background thread. |
 | `running`, `error` | `running` becomes false if the dongle fails, and `error` holds the cause. |
