@@ -100,6 +100,10 @@ class Band:
 	scan_threshold_db: float = 5
 	# Bands below the tuner's range feed the antenna straight to the dongle's converter.
 	direct_sampling: bool = False
+	khz: bool = False
+
+	def format(self, freq_mhz):
+		return f"{freq_mhz * 1000:.0f} kHz" if self.khz else f"{freq_mhz:.{self.digits}f} MHz"
 
 	@property
 	def half_width(self):
@@ -110,7 +114,7 @@ class Band:
 # North American de-emphasis. Europe uses 50 microseconds.
 FM = Band(min_mhz=87.5, max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6)
 NOAA = Band(min_mhz=162.4, max_mhz=162.55, step_mhz=0.025, digits=3, max_deviation=5000, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None)
-AM = Band(min_mhz=0.53, max_mhz=1.7, step_mhz=0.01, digits=2, max_deviation=None, narrow_cutoff=5000, audio_cutoff=5000, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13)
+AM = Band(min_mhz=0.53, max_mhz=1.7, step_mhz=0.01, digits=2, max_deviation=None, narrow_cutoff=5000, audio_cutoff=5000, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13, khz=True)
 # Direct sampling stops at 14.4 MHz, half of the dongle's 28.8 MHz converter rate.
 SW = Band(min_mhz=2.3, max_mhz=14.4, step_mhz=0.005, digits=3, max_deviation=None, narrow_cutoff=4500, audio_cutoff=4500, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13)
 AIR = Band(min_mhz=118.0, max_mhz=136.975, step_mhz=0.025, digits=3, max_deviation=None, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, am=True)
@@ -657,7 +661,7 @@ class RadioCLI:
 
 	def status_text(self):
 		receiver = self.receiver
-		parts = [f"{receiver.freq_mhz:.{receiver.band.digits}f} MHz", f"Signal {receiver.signal_db} dB" if self.show_signal else "", receiver.rds_name]
+		parts = [receiver.band.format(receiver.freq_mhz), f"Signal {receiver.signal_db} dB" if self.show_signal else "", receiver.rds_name]
 		if receiver.muted:
 			parts.append("Muted")
 		if receiver.paused:
