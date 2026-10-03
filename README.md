@@ -1,8 +1,28 @@
 # Radio Utils
 
-This repository contains scripts for digitally receiving and getting information about radio stations.
+This repository contains commands for digitally receiving and getting information about radio stations.
 
-The primary application is `sdr.py`, a radio receiver that plays AM, shortwave, FM, aviation, and NOAA weather radio from an RTL-SDR USB dongle. The other scripts find nearby stations and their stream URLs through online services such as TuneIn and Broadcastify.
+The primary application is `sdr`, a radio receiver that plays AM, shortwave, FM, aviation, and NOAA weather radio from an RTL-SDR USB dongle. The other commands find nearby stations and their stream URLs through online services such as TuneIn and Broadcastify.
+
+## Installing
+
+The commands need Python 3.10 or later and [uv](https://docs.astral.sh/uv/). In this folder, run:
+
+```
+uv sync
+```
+
+Then run each command with `uv run`, for example `uv run sdr 97.9` or `uv run tunein "jazz"`. To cast to Sonos speakers, install the extra packages for it:
+
+```
+uv sync --extra sonos
+```
+
+To use the commands from any folder without `uv run`, install them as tools instead:
+
+```
+uv tool install ".[sonos]"
+```
 
 ## SDR Listener
 
@@ -22,12 +42,6 @@ AM and shortwave use the dongle's direct sampling mode. Some dongles need a hard
 
 ### Running
 
-The script needs Python 3.10 or later and some packages:
-
-```
-pip install numpy scipy pyaudio pyrtlsdr pyrtlsdrlib
-```
-
 Give a frequency in MHz, or give no frequency to start at 87.5 MHz.
 
 When tuning to AM frequencies, specify them in MHz. For example, to listen to 1400 kHz, type "1.4".
@@ -35,26 +49,26 @@ When tuning to AM frequencies, specify them in MHz. For example, to listen to 14
 Usage:
 
 ```
-python sdr.py
-python sdr.py 97.9
-python sdr.py 1.4
-python sdr.py 9.58
-python sdr.py 127.575
-python sdr.py 162.55
+uv run sdr
+uv run sdr 97.9
+uv run sdr 1.4
+uv run sdr 9.58
+uv run sdr 127.575
+uv run sdr 162.55
 ```
 
 If you have more than one dongle, the script asks you to choose one before it starts playback.
 
-The script picks US or European band settings from the country in your system settings. this is obtained through the Windows region, or the `LANG` setting on Linux and macOS. If that is not set, it falls back to US. You can override this by invoking `sdr.py` with `--region us` or `--region eu`:
+The script picks US or European band settings from the country in your system settings. this is obtained through the Windows region, or the `LANG` setting on Linux and macOS. If that is not set, it falls back to US. You can override this by invoking `sdr` with `--region us` or `--region eu`:
 
 ```
-python sdr.py 97.9 --region eu
+uv run sdr 97.9 --region eu
 ```
 
 On weather radio, each alert prints on its own line, for example `ALERT: Tornado Warning until 3:45 PM for 004013`, and stays on the status line until it expires. The numbers are county FIPS codes. To only get alerts for your county, add `--county` with its FIPS code. To keep the sound off until an alert arrives, like a weather radio, add `--alert-mode`:
 
 ```
-python sdr.py 162.55 --county 004013 --alert-mode
+uv run sdr 162.55 --county 004013 --alert-mode
 ```
 
 Stations send a required weekly test, usually on Wednesday between 11 AM and noon local time. It shows as `ALERT: Required Weekly Test`.
@@ -83,17 +97,17 @@ The keyboard's Previous Track and Next Track keys also scan, even when another w
 
 ### Casting to Sonos
 
-Casting needs two more packages:
+Casting needs the extra Sonos packages (see Installing):
 
 ```
-pip install soco lameenc
+uv sync --extra sonos
 ```
 
 Add `--sonos` and the name of a speaker. The radio plays on that speaker's group, as the groups are set up in the Sonos app. Without a name, the script lists the groups for you to choose from. You can also press `c` to start or stop casting while the script runs.
 
 ```
-python sdr.py 97.9 --sonos Kitchen
-python sdr.py 97.9 --sonos
+uv run sdr 97.9 --sonos Kitchen
+uv run sdr 97.9 --sonos
 ```
 
 While casting:
@@ -110,10 +124,10 @@ The first time you cast, Windows may ask whether Python can use the network. All
 
 ### Using the receiver from another program
 
-`sdr.py` can also be imported. The receiver does not need the keyboard controls:
+`sdr` can also be imported from another program. The receiver does not need the keyboard controls:
 
 ```python
-import sdr
+from radio_utils import sdr
 
 devices = sdr.list_devices()
 receiver = sdr.Receiver(devices[0].index, 97.9, region="eu")
@@ -144,76 +158,76 @@ receiver.stop()
 | `alert`, `on_alert` | The latest weather alert, an `sdr.Alert` with `name`, `event`, `locations`, `issued`, `expires`, and `describe()`. `on_alert` is called with each new alert from a background thread. |
 | `running`, `error` | `running` becomes false if the dongle fails, and `error` holds the cause. |
 
-## Other scripts
+## Other commands
 
-These scripts are in the `scripts` folder. They need Python 3.10 or later and use only the standard library. If you run one with no arguments, it asks you for input.
+These commands use only the standard library. If you run one with no arguments, it asks you for input.
 
 Some of these services (radio-locator.com, for example) limit how many requests one IP address can make. Not all of the limits are documented.
 
-| Script | Source | Purpose |
+| Command | Source | Purpose |
 | --- | --- | --- |
-| `radiolocator.py` | radio-locator.com | Lists AM and FM stations near a zip code with distance, signal strength, and format. Shows full details for one call sign. |
-| `zipsignal.py` | V-Soft ZipSignal | Lists AM and FM stations whose signal covers a zip code. |
-| `tunein.py` | TuneIn | Searches stations by name, call sign, or location and prints their stream URLs. |
-| `iheart.py` | iHeartRadio | Searches iHeartRadio stations and prints their stream URLs. |
-| `streema.py` | Streema | Prints the direct stream URL for a call sign. |
-| `broadcastify.py` | Broadcastify | Searches scanner feeds (fire, police, weather, and more) and prints their stream URLs. |
+| `radio-locator` | radio-locator.com | Lists AM and FM stations near a zip code with distance, signal strength, and format. Shows full details for one call sign. |
+| `zipsignal` | V-Soft ZipSignal | Lists AM and FM stations whose signal covers a zip code. |
+| `tunein` | TuneIn | Searches stations by name, call sign, or location and prints their stream URLs. |
+| `iheart` | iHeartRadio | Searches iHeartRadio stations and prints their stream URLs. |
+| `streema` | Streema | Prints the direct stream URL for a call sign. |
+| `broadcastify` | Broadcastify | Searches scanner feeds (fire, police, weather, and more) and prints their stream URLs. |
 
 ### Finding stations at a location
 
-You can use `radiolocator.py`, `zipsignal.py`, or `tunein.py`.
+You can use `radio-locator`, `zipsignal`, or `tunein`.
 
-`radiolocator.py` and `zipsignal.py` take a 5 digit US zip code:
+`radio-locator` and `zipsignal` take a 5 digit US zip code:
 
 ```
-python scripts/radiolocator.py 60601
-python scripts/zipsignal.py 60601
+uv run radio-locator 60601
+uv run zipsignal 60601
 ```
 
 To get full details for one station from the list, such as its owner, address, and transmitter data:
 
 ```
-python scripts/radiolocator.py --info WBBM
-python scripts/radiolocator.py --info WGN-AM
+uv run radio-locator --info WBBM
+uv run radio-locator --info WGN-AM
 ```
 
-`tunein.py` takes a place name or a zip code and also prints the stream URLs:
+`tunein` takes a place name or a zip code and also prints the stream URLs:
 
 ```
-python scripts/tunein.py --location "Chicago, IL"
-python scripts/tunein.py --location 60601
+uv run tunein --location "Chicago, IL"
+uv run tunein --location 60601
 ```
 
 ### Finding the direct stream URL from a call sign
 
-You can use `streema.py`, `tunein.py`, or `iheart.py`.
+You can use `streema`, `tunein`, or `iheart`.
 
 ```
-python scripts/streema.py WFMT
-python scripts/streema.py WGN-AM
-python scripts/tunein.py --callsign WFMT
+uv run streema WFMT
+uv run streema WGN-AM
+uv run tunein --callsign WFMT
 ```
 
-`tunein.py` and `iheart.py` can also search by station name:
+`tunein` and `iheart` can also search by station name:
 
 ```
-python scripts/tunein.py "jazz"
-python scripts/iheart.py WGCI
+uv run tunein "jazz"
+uv run iheart WGCI
 ```
 
 ### Finding fire, police, weather, etc
 
-You can use `broadcastify.py`.
+You can use `broadcastify`.
 
 Search feeds by place or keyword. The results show the feed ID, status, and listener count:
 
 ```
-python scripts/broadcastify.py "Cook County"
-python scripts/broadcastify.py "NOAA weather"
+uv run broadcastify "Cook County"
+uv run broadcastify "NOAA weather"
 ```
 
 Then get the stream URL with the feed ID or the feed name:
 
 ```
-python scripts/broadcastify.py --stream 20973
+uv run broadcastify --stream 20973
 ```

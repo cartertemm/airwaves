@@ -1,0 +1,32 @@
+[project]
+name = "radio-utils"
+version = "0.1.0"
+description = "A radio receiver for RTL-SDR dongles, and tools that find radio stations and their stream URLs."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+	"numpy",
+	"pyaudio",
+	"pyrtlsdr",
+	"pyrtlsdrlib",
+	"scipy",
+]
+
+[project.optional-dependencies]
+sonos = [
+	"lameenc",
+	"soco",
+]
+
+[project.scripts]
+sdr = "radio_utils.sdr:main"
+broadcastify = "radio_utils.broadcastify:main"
+iheart = "radio_utils.iheart:main"
+radio-locator = "radio_utils.radiolocator:main"
+streema = "radio_utils.streema:main"
+tunein = "radio_utils.tunein:main"
+zipsignal = "radio_utils.zipsignal:main"
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12"]
+build-backend = "uv_build"

@@ -912,7 +912,7 @@ class RadioCLI:
 
 	def start_cast(self, name=None):
 		try:
-			import sonos_cast
+			from . import sonos_cast
 		except ImportError:
 			self.show_message("error: Casting needs two more packages: pip install soco lameenc")
 			return

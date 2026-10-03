@@ -55,5 +55,9 @@ def get_stream_url(call_sign):
 	return stream_from(slug for slug in dict.fromkeys(search_slugs) if slug not in direct_slugs)
 
 
-if __name__ == "__main__":
+def main():
 	print(get_stream_url(sys.argv[1] if len(sys.argv) > 1 else input("Call sign: ")))
+
+
+if __name__ == "__main__":
+	main()
