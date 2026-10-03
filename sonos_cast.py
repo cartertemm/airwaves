@@ -118,8 +118,7 @@ class StreamHandler(BaseHTTPRequestHandler):
 class Caster:
 	"""Plays a Receiver's audio on a Sonos group, and turns the Sonos skip buttons into scans.
 
-	on_skip is called with 1 or -1 when a skip button is pressed, on_change when Sonos is paused, resumed, muted, or unmuted,
-	and on_lost when the group switches to another source. All three run on a background thread."""
+	Override or assign on_skip, on_change, and on_lost to react to Sonos. They run on a background thread."""
 
 	def __init__(self, receiver, group, audio_rate):
 		self.receiver = receiver
@@ -134,9 +133,6 @@ class Caster:
 		self.running = False
 		self.position = None
 		self.status = (False, False)
-		self.on_skip = None
-		self.on_change = None
-		self.on_lost = None
 
 	def start(self):
 		self.running = True
@@ -174,6 +170,15 @@ class Caster:
 		receiver = self.receiver
 		station = " ".join(part for part in (receiver.band.format(receiver.freq_mhz), receiver.rds_name) if part)
 		return f"{station} - {receiver.rds_text}" if receiver.rds_text else station
+
+	def on_skip(self, direction):
+		"""Called with 1 or -1 when a Sonos skip button is pressed."""
+
+	def on_change(self):
+		"""Called when Sonos is paused, resumed, muted, or unmuted."""
+
+	def on_lost(self):
+		"""Called when the group switches to another source. Polling has stopped; call stop(release=False) to leave Sonos alone."""
 
 	def add_client(self, client):
 		with self.clients_lock:
@@ -233,19 +238,18 @@ class Caster:
 			return
 		if self.stream_address not in track["uri"]:
 			# Before Sonos first plays the stream, the previous source still shows.
-			if self.position is not None and track["uri"] and self.on_lost:
+			if self.position is not None and track["uri"]:
 				self.running = False
 				self.on_lost()
 			return
 		position = int(track["playlist_position"])
-		if self.position is not None and position != self.position and self.on_skip:
+		if self.position is not None and position != self.position:
 			self.on_skip(1 if (position - self.position) % QUEUE_COPIES == 1 else -1)
 		self.position = position
 		status = (state == "PAUSED_PLAYBACK", muted)
 		if status != self.status:
 			self.status = status
-			if self.on_change:
-				self.on_change()
+			self.on_change()
 
 	@property
 	def paused(self):
