@@ -1,5 +1,5 @@
 [project]
-name = "radio-utils"
+name = "airwaves"
 version = "0.1.0"
 description = "A radio receiver for RTL-SDR dongles, and tools that find radio stations and their stream URLs."
 readme = "README.md"
@@ -23,13 +23,13 @@ airplay = [
 ]
 
 [project.scripts]
-sdr = "radio_utils.sdr:main"
-broadcastify = "radio_utils.broadcastify:main"
-iheart = "radio_utils.iheart:main"
-radio-locator = "radio_utils.radiolocator:main"
-streema = "radio_utils.streema:main"
-tunein = "radio_utils.tunein:main"
-zipsignal = "radio_utils.zipsignal:main"
+sdr = "airwaves.sdr:main"
+broadcastify = "airwaves.broadcastify:main"
+iheart = "airwaves.iheart:main"
+radio-locator = "airwaves.radiolocator:main"
+streema = "airwaves.streema:main"
+tunein = "airwaves.tunein:main"
+zipsignal = "airwaves.zipsignal:main"
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12"]

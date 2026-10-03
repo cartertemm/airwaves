@@ -9,7 +9,7 @@ from dataclasses import dataclass, field, fields
 
 API_URL = "https://opml.radiotime.com/{}.ashx?"
 GEOCODE_URL = "https://nominatim.openstreetmap.org/search?"
-GEOCODE_HEADERS = {"User-Agent": "radio-utils/1.0"}
+GEOCODE_HEADERS = {"User-Agent": "airwaves/1.0"}
 HEADERS = {
 	"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
 }

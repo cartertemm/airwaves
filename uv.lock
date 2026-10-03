@@ -167,6 +167,46 @@ wheels = [
 ]
 
 [[package]]
+name = "airwaves"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "pyaudio" },
+    { name = "pyrtlsdr" },
+    { name = "pyrtlsdrlib" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
+
+[package.optional-dependencies]
+airplay = [
+    { name = "lameenc" },
+    { name = "pyatv" },
+]
+sonos = [
+    { name = "lameenc" },
+    { name = "soco" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "lameenc", marker = "extra == 'airplay'" },
+    { name = "lameenc", marker = "extra == 'sonos'" },
+    { name = "numpy" },
+    { name = "pyatv", marker = "extra == 'airplay'" },
+    { name = "pyaudio" },
+    { name = "pyrtlsdr" },
+    { name = "pyrtlsdrlib" },
+    { name = "scipy" },
+    { name = "soco", marker = "extra == 'sonos'" },
+]
+provides-extras = ["sonos", "airplay"]
+
+[[package]]
 name = "annotated-types"
 version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1748,46 +1788,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/13/fa/17cf3590a6413d120e7bb6d18f5e351dcd7fcfee166ba6c6fa4a88ebb30e/pyrtlsdrlib-0.0.6-py3-none-win32.whl", hash = "sha256:7f4aec49e231a8f96b10b2417bbd237107c2d1a478c25c62645178792146ecb6", size = 1310330, upload-time = "2026-09-19T18:06:44.592Z" },
     { url = "https://files.pythonhosted.org/packages/ca/f3/56db4e49495d530cf1aa7cc01eb15e2b6dcad5784a10402bd6243bbae09a/pyrtlsdrlib-0.0.6-py3-none-win_amd64.whl", hash = "sha256:3cf62393037fa850c40117dab8118b3a00f9daa90dfa00de693440c1c16d0eb1", size = 1310332, upload-time = "2026-09-19T18:06:46.212Z" },
 ]
-
-[[package]]
-name = "radio-utils"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "pyaudio" },
-    { name = "pyrtlsdr" },
-    { name = "pyrtlsdrlib" },
-    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-]
-
-[package.optional-dependencies]
-airplay = [
-    { name = "lameenc" },
-    { name = "pyatv" },
-]
-sonos = [
-    { name = "lameenc" },
-    { name = "soco" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "lameenc", marker = "extra == 'airplay'" },
-    { name = "lameenc", marker = "extra == 'sonos'" },
-    { name = "numpy" },
-    { name = "pyatv", marker = "extra == 'airplay'" },
-    { name = "pyaudio" },
-    { name = "pyrtlsdr" },
-    { name = "pyrtlsdrlib" },
-    { name = "scipy" },
-    { name = "soco", marker = "extra == 'sonos'" },
-]
-provides-extras = ["sonos", "airplay"]
 
 [[package]]
 name = "requests"

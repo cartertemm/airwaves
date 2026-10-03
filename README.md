@@ -1,4 +1,4 @@
-# Radio Utils
+# Airwaves
 
 This repository contains commands for digitally receiving and getting information about radio stations.
 
@@ -136,7 +136,7 @@ The first time you cast, Windows may ask whether Python can use the network. All
 `sdr` can also be imported from another program. The receiver does not need the keyboard controls:
 
 ```python
-from radio_utils import sdr
+from airwaves import sdr
 
 devices = sdr.list_devices()
 receiver = sdr.Receiver(devices[0].index, 97.9, region="eu")
