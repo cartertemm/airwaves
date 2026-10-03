@@ -16,6 +16,7 @@ META_INTERVAL = 16000
 # Chunks a slow connection may fall behind before it starts losing audio.
 CLIENT_BACKLOG = 50
 CLIENT_WAIT_SECONDS = 1
+MP3_FRAME_SAMPLES = 1152
 DISCOVER_SECONDS = 5
 POLL_SECONDS = 0.5
 SONOS_PORT = 1400
@@ -46,6 +47,26 @@ def local_ip(address):
 		return probe.getsockname()[0]
 
 
+def new_encoder(audio_rate):
+	encoder = lameenc.Encoder()
+	encoder.set_bit_rate(BITRATE)
+	encoder.set_in_sample_rate(audio_rate)
+	encoder.set_channels(2)
+	encoder.set_quality(MP3_QUALITY)
+	return encoder
+
+
+def silent_chunk(audio_rate):
+	"""Returns whole MP3 frames of silence, about CHUNK_SECONDS long."""
+	encoder = new_encoder(audio_rate)
+	data = bytes(encoder.encode(np.zeros(audio_rate * 2, dtype=np.int16).tobytes())) + bytes(encoder.flush())
+	frame_bytes = 144 * BITRATE * 1000 // audio_rate
+	frames = max(1, round(audio_rate * CHUNK_SECONDS / MP3_FRAME_SAMPLES))
+	# Take frames from the middle, away from the encoder's start.
+	start = len(data) // 2 // frame_bytes * frame_bytes
+	return data[start:start + frames * frame_bytes]
+
+
 def icy_metadata(title):
 	# Sonos ends the title at "';", so a plain apostrophe inside it is fine.
 	text = f"StreamTitle='{title}';".encode()
@@ -70,7 +91,7 @@ class StreamHandler(BaseHTTPRequestHandler):
 			self.send_header("icy-metaint", str(META_INTERVAL))
 		self.end_headers()
 		client = queue.Queue(maxsize=CLIENT_BACKLOG)
-		caster.clients.add(client)
+		caster.add_client(client)
 		until_metadata = META_INTERVAL
 		try:
 			while caster.running:
@@ -91,7 +112,7 @@ class StreamHandler(BaseHTTPRequestHandler):
 		except OSError:
 			pass
 		finally:
-			caster.clients.discard(client)
+			caster.remove_client(client)
 
 
 class Caster:
@@ -105,7 +126,11 @@ class Caster:
 		self.coordinator = group.coordinator
 		self.name = group_label(group)
 		self.audio_rate = audio_rate
+		# New connections get silence until the next poll, because a skip button makes Sonos connect again
+		# before the poll can see the skip. Sonos waits for data before it answers, so the poll cannot run sooner.
 		self.clients = set()
+		self.pending = set()
+		self.clients_lock = threading.Lock()
 		self.running = False
 		self.position = None
 		self.status = (False, False)
@@ -115,6 +140,7 @@ class Caster:
 
 	def start(self):
 		self.running = True
+		self.silence = silent_chunk(self.audio_rate)
 		self.server = ThreadingHTTPServer(("", 0), StreamHandler)
 		self.server.daemon_threads = True
 		self.server.caster = self
@@ -149,20 +175,34 @@ class Caster:
 		station = " ".join(part for part in (receiver.band.format(receiver.freq_mhz), receiver.rds_name) if part)
 		return f"{station} - {receiver.rds_text}" if receiver.rds_text else station
 
+	def add_client(self, client):
+		with self.clients_lock:
+			self.pending.add(client)
+
+	def remove_client(self, client):
+		with self.clients_lock:
+			self.pending.discard(client)
+			self.clients.discard(client)
+
+	def release(self, waiting):
+		"""Moves connections from silence to the live stream."""
+		with self.clients_lock:
+			released = self.pending & waiting
+			self.pending -= released
+			self.clients |= released
+
 	def encode(self):
-		encoder = lameenc.Encoder()
-		encoder.set_bit_rate(BITRATE)
-		encoder.set_in_sample_rate(self.audio_rate)
-		encoder.set_channels(2)
-		encoder.set_quality(MP3_QUALITY)
+		encoder = new_encoder(self.audio_rate)
 		frames = round(self.audio_rate * CHUNK_SECONDS)
 		next_time = time.monotonic()
 		while self.running:
 			audio = self.receiver.read_audio(frames)
 			data = bytes(encoder.encode((np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes()))
-			for client in list(self.clients):
+			with self.clients_lock:
+				sends = [(client, data) for client in self.clients] + [(client, self.silence) for client in self.pending]
+			for client, chunk in sends:
 				try:
-					client.put_nowait(data)
+					client.put_nowait(chunk)
 				except queue.Full:
 					pass
 			next_time += CHUNK_SECONDS
@@ -171,31 +211,41 @@ class Caster:
 	def poll(self):
 		while self.running:
 			time.sleep(POLL_SECONDS)
+			# Only connections that arrived before this poll asked Sonos can be released by it.
+			with self.clients_lock:
+				waiting = set(self.pending)
 			try:
-				track = self.coordinator.get_current_track_info()
-				state = self.coordinator.get_current_transport_info()["current_transport_state"]
-				muted = self.coordinator.group.mute
-			except Exception:
-				# Sonos did not answer this time. Ask again on the next poll.
-				continue
-			if not self.running:
-				# stop() changes the queue position, which is not a skip.
-				return
-			if self.stream_address not in track["uri"]:
-				# Before Sonos first plays the stream, the previous source still shows.
-				if self.position is not None and track["uri"] and self.on_lost:
-					self.on_lost()
-					return
-				continue
-			position = int(track["playlist_position"])
-			if self.position is not None and position != self.position and self.on_skip:
-				self.on_skip(1 if (position - self.position) % QUEUE_COPIES == 1 else -1)
-			self.position = position
-			status = (state == "PAUSED_PLAYBACK", muted)
-			if status != self.status:
-				self.status = status
-				if self.on_change:
-					self.on_change()
+				self.check()
+			finally:
+				self.release(waiting)
+
+	def check(self):
+		"""Asks Sonos for its state once: scans on a skip, and reports pauses, mutes, and another source taking over."""
+		try:
+			track = self.coordinator.get_current_track_info()
+			state = self.coordinator.get_current_transport_info()["current_transport_state"]
+			muted = self.coordinator.group.mute
+		except Exception:
+			# Sonos did not answer this time. Ask again on the next poll.
+			return
+		if not self.running:
+			# stop() changes the queue position, which is not a skip.
+			return
+		if self.stream_address not in track["uri"]:
+			# Before Sonos first plays the stream, the previous source still shows.
+			if self.position is not None and track["uri"] and self.on_lost:
+				self.running = False
+				self.on_lost()
+			return
+		position = int(track["playlist_position"])
+		if self.position is not None and position != self.position and self.on_skip:
+			self.on_skip(1 if (position - self.position) % QUEUE_COPIES == 1 else -1)
+		self.position = position
+		status = (state == "PAUSED_PLAYBACK", muted)
+		if status != self.status:
+			self.status = status
+			if self.on_change:
+				self.on_change()
 
 	@property
 	def paused(self):
