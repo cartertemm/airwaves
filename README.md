@@ -16,6 +16,7 @@ The primary application is `sdr.py`, a radio receiver that plays AM, shortwave, 
 * Scanning up or down to the next station in the band.
 * US and European band settings. In Europe, AM is 531 to 1602 kHz in 9 kHz steps, FM uses 50 microsecond de-emphasis, and there is no NOAA weather radio.
 * The status line and the window title show the frequency, and optionally the signal strength.
+* Casting to Sonos speakers, with the station and song shown in the Sonos app.
 
 AM and shortwave use the dongle's direct sampling mode. Some dongles need a hardware change before direct sampling picks up anything. Direct sampling stops at 14.4 MHz, so the shortwave bands above that need an upconverter. Shortwave also needs a long wire antenna, ideally outside.
 
@@ -74,8 +75,38 @@ The keys work on Windows only.
 | `t` | Type a frequency in MHz |
 | `m` | Mute or unmute |
 | `i` | Show or hide the signal strength |
+| `c` | Start or stop casting to Sonos |
 | `h` | List the keys |
 | Ctrl+C | Quit |
+
+The keyboard's Previous Track and Next Track keys also scan, even when another window has focus.
+
+### Casting to Sonos
+
+Casting needs two more packages:
+
+```
+pip install soco lameenc
+```
+
+Add `--sonos` and the name of a speaker. The radio plays on that speaker's group, as the groups are set up in the Sonos app. Without a name, the script lists the groups for you to choose from. You can also press `c` to start or stop casting while the script runs.
+
+```
+python sdr.py 97.9 --sonos Kitchen
+python sdr.py 97.9 --sonos
+```
+
+While casting:
+
+* The computer is silent. The Sonos speakers play about 5 seconds behind the radio.
+* Space, `_`, `+`, and `m` pause, change the volume of, and mute the Sonos group.
+* The skip buttons on the speakers and in the Sonos app scan to the previous or next station.
+* The Sonos app shows the frequency and station name, and the song from RDS.
+* If someone plays something else on the speakers, the script plays on the computer again.
+
+Casting replaces the Sonos queue for the group. When you stop casting or quit, the speakers stop.
+
+The first time you cast, Windows may ask whether Python can use the network. Allow it on private networks, or the speakers cannot reach the script.
 
 ### Using the receiver from another program
 

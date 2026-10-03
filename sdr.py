@@ -117,10 +117,13 @@ SCAN_LOW_OFFSET = 100000
 SCAN_HIGH_OFFSET = 600000
 
 KEY_POLL_SECONDS = 0.02
-HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "m: mute", "i: show/hide signal", "h: help", "Ctrl+C: quit")
+HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "m: mute", "i: show/hide signal", "c: cast to Sonos", "h: help", "Ctrl+C: quit")
 HELP_KEYS_PER_LINE = 3
 HELP_TEXT = "\n".join(", ".join(HELP_KEYS[i:i + HELP_KEYS_PER_LINE]) for i in range(0, len(HELP_KEYS), HELP_KEYS_PER_LINE))
 TITLE_LENGTH = 1024
+VK_MEDIA_NEXT_TRACK = 0xB0
+VK_MEDIA_PREV_TRACK = 0xB1
+WM_HOTKEY = 0x0312
 
 
 @dataclass(frozen=True)
@@ -752,10 +755,26 @@ class Receiver:
 				self.buffer.put(audio)
 			self.raw_blocks.task_done()
 
+	def read_audio(self, frame_count):
+		"""Returns the next frame_count frames of stereo audio, before volume and mute. Use it when local_audio is off."""
+		return self.buffer.get(frame_count) * OUTPUT_LEVEL
+
 	def fill_audio(self, in_data, frame_count, time_info, status):
-		audio = self.buffer.get(frame_count)
-		gain = 0 if self.muted or self.is_paused else self.volume_percent / MAX_VOLUME * OUTPUT_LEVEL
+		audio = self.read_audio(frame_count)
+		gain = 0 if self.muted or self.is_paused else self.volume_percent / MAX_VOLUME
 		return (audio * gain).tobytes(), pyaudio.paContinue
+
+	@property
+	def local_audio(self):
+		"""Whether the audio plays on this computer's sound card."""
+		return self.stream.is_active()
+
+	@local_audio.setter
+	def local_audio(self, enabled):
+		if enabled:
+			self.stream.start_stream()
+		else:
+			self.stream.stop_stream()
 
 	def seek(self, direction):
 		"""Tunes to the next station up (direction 1) or down (direction -1) in the current band, wrapping at the band edges.
@@ -861,28 +880,91 @@ def choose_device(devices):
 class RadioCLI:
 	"""Keyboard controls and a status line for a Receiver."""
 
-	def __init__(self, receiver, alert_mode=False):
+	def __init__(self, receiver, alert_mode=False, sonos=None):
 		self.receiver = receiver
 		self.receiver.on_status_change = self.show_status
 		self.receiver.on_alert = self.announce_alert
 		self.alert_mode = alert_mode
+		self.waiting_for_alert = alert_mode
 		if alert_mode:
 			receiver.muted = True
+		self.sonos = sonos
+		self.caster = None
 		self.display_lock = threading.Lock()
 		self.prompting = False
 		self.show_signal = False
 
+	@property
+	def output(self):
+		"""Where the sound goes, with volume, muted, and paused: the Sonos group while casting, otherwise this computer."""
+		return self.caster or self.receiver
+
 	def announce_alert(self, alert):
-		if self.alert_mode:
+		if self.waiting_for_alert:
+			self.waiting_for_alert = False
 			self.receiver.muted = False
+			if self.caster:
+				self.caster.paused = False
 		self.show_message(alert.describe())
+
+	def start_cast(self, name=None):
+		try:
+			import sonos_cast
+		except ImportError:
+			self.show_message("error: Casting needs two more packages: pip install soco lameenc")
+			return
+		groups = sonos_cast.find_groups()
+		if name:
+			groups = [group for group in groups if name.lower() in (member.player_name.lower() for member in group.members)]
+		if not groups:
+			self.show_message(f"error: No Sonos speaker named {name}." if name else "error: No Sonos speakers found.")
+			return
+		group = groups[0]
+		if len(groups) > 1:
+			group = groups[self.prompt(lambda: menu("Cast to: ", [sonos_cast.group_label(group) for group in groups]))]
+		caster = sonos_cast.Caster(self.receiver, group, AUDIO_RATE)
+		caster.on_skip = self.seek
+		caster.on_change = self.show_status
+		caster.on_lost = self.cast_lost
+		caster.start()
+		self.caster = caster
+		if self.waiting_for_alert:
+			caster.paused = True
+		self.show_message(f"Casting to Sonos: {caster.name}")
+
+	def stop_cast(self):
+		caster, self.caster = self.caster, None
+		caster.stop()
+		self.show_message("Stopped casting. Playing here again.")
+
+	def cast_lost(self):
+		caster, self.caster = self.caster, None
+		caster.stop(release=False)
+		self.show_message("Sonos switched to another source. Playing here again.")
+
+	def watch_media_keys(self):
+		"""Scans when the keyboard's Previous Track or Next Track key is pressed, even when another window has focus."""
+		from ctypes import wintypes
+		user32 = ctypes.windll.user32
+		directions = {1: -1, 2: 1}
+		for hotkey, key in ((1, VK_MEDIA_PREV_TRACK), (2, VK_MEDIA_NEXT_TRACK)):
+			if not user32.RegisterHotKey(None, hotkey, 0, key):
+				self.show_message("Another program uses the media keys, so they will not scan.")
+				return
+		message = wintypes.MSG()
+		while user32.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
+			if message.message == WM_HOTKEY:
+				self.seek(directions[message.wParam])
 
 	def status_text(self):
 		receiver = self.receiver
+		output = self.output
 		parts = [receiver.band.format(receiver.freq_mhz), f"Signal {receiver.signal_db} dB" if self.show_signal else "", receiver.rds_name]
-		if receiver.muted:
+		if self.caster:
+			parts.append(f"Sonos: {self.caster.name}")
+		if output.muted:
 			parts.append("Muted")
-		if receiver.paused:
+		if output.paused:
 			parts.append("Paused")
 		parts.append(receiver.rds_text)
 		if receiver.alert and receiver.alert.active():
@@ -904,14 +986,18 @@ class RadioCLI:
 			sys.stdout.write("\r" + " " * console_width() + "\r" + message + "\n")
 		self.show_status()
 
-	def prompt_frequency(self):
+	def prompt(self, ask):
+		"""Runs ask, which reads from the console, without the status line drawing over it."""
 		with self.display_lock:
 			self.prompting = True
 			sys.stdout.write("\n")
 		try:
-			text = input(f"Frequency in MHz ({band_ranges(self.receiver.bands)}): ")
+			return ask()
 		finally:
 			self.prompting = False
+
+	def prompt_frequency(self):
+		text = self.prompt(lambda: input(f"Frequency in MHz ({band_ranges(self.receiver.bands)}): "))
 		try:
 			freq_mhz = float(text)
 		except ValueError:
@@ -936,13 +1022,13 @@ class RadioCLI:
 			self.receiver.tune(freq_mhz)
 
 	def handle_key(self, key):
-		receiver = self.receiver
+		output = self.output
 		if key == " ":
-			receiver.paused = not receiver.paused
+			output.paused = not output.paused
 		elif key == "_":
-			receiver.volume -= VOLUME_STEP
+			output.volume -= VOLUME_STEP
 		elif key == "+":
-			receiver.volume += VOLUME_STEP
+			output.volume += VOLUME_STEP
 		elif key == "s":
 			self.step(-1)
 		elif key == "w":
@@ -952,7 +1038,13 @@ class RadioCLI:
 		elif key == "W":
 			self.seek(1)
 		elif key == "m":
-			receiver.muted = not receiver.muted
+			output.muted = not output.muted
+		elif key == "c":
+			if self.caster:
+				self.stop_cast()
+			else:
+				self.start_cast()
+			return
 		elif key == "i":
 			self.show_signal = not self.show_signal
 		elif key == "h":
@@ -970,6 +1062,9 @@ class RadioCLI:
 			print("Alert mode: the sound stays off until a weather alert arrives.")
 		self.show_status()
 		self.receiver.start()
+		threading.Thread(target=self.watch_media_keys, daemon=True).start()
+		if self.sonos is not None:
+			self.start_cast(self.sonos)
 		try:
 			while self.receiver.running:
 				key = read_key()
@@ -982,6 +1077,8 @@ class RadioCLI:
 		except KeyboardInterrupt:
 			pass
 		finally:
+			if self.caster:
+				self.caster.stop()
 			self.receiver.stop()
 			set_title(original_title)
 			print()
@@ -993,6 +1090,7 @@ def main():
 	parser.add_argument("--region", choices=REGIONS, help="Band plan to use. Default is from the system's country setting.")
 	parser.add_argument("--county", help="Only report weather alerts for this 5 or 6 digit county FIPS code.")
 	parser.add_argument("--alert-mode", action="store_true", help="Keep the sound off until a weather alert arrives. Needs a NOAA frequency.")
+	parser.add_argument("--sonos", nargs="?", const="", metavar="SPEAKER", help="Cast to the Sonos group with this speaker in it. Without a name, choose from a list.")
 	args = parser.parse_args()
 	region = args.region or detect_region()
 	band = band_for(args.frequency, REGIONS[region])
@@ -1008,7 +1106,7 @@ def main():
 		return 1
 	receiver = Receiver(choose_device(devices).index, args.frequency, region)
 	receiver.county = args.county
-	RadioCLI(receiver, args.alert_mode).run()
+	RadioCLI(receiver, args.alert_mode, args.sonos).run()
 	if receiver.error:
 		print(f"error: {receiver.error}")
 		return 1
