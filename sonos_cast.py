@@ -8,7 +8,7 @@ import lameenc
 import numpy as np
 import soco
 
-BITRATE = 192
+BITRATE = 320
 MP3_QUALITY = 2
 CHUNK_SECONDS = 0.1
 # Data before each ICY metadata block, the title Sonos shows for radio streams.

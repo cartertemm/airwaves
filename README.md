@@ -98,7 +98,7 @@ python sdr.py 97.9 --sonos
 
 While casting:
 
-* The computer is silent. The Sonos speakers play about 5 seconds behind the radio.
+* The computer is silent. The Sonos speakers play about 4 seconds behind the radio.
 * Space, `_`, `+`, and `m` pause, change the volume of, and mute the Sonos group.
 * The skip buttons on the speakers and in the Sonos app scan to the previous or next station.
 * The Sonos app shows the frequency and station name, and the song from RDS.
