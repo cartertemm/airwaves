@@ -824,12 +824,14 @@ class Receiver:
 
 def menu(prompt, items):
 	"""Constructs and shows a simple commandline menu.
-	Returns an index of the provided items sequence."""
+	Returns an index of the provided items sequence, or None if the input is blank."""
 	for i in range(len(items)):
 		print(str(i + 1) + ": " + items[i])
 	result = None
 	while True:
 		result = input(prompt)
+		if not result.strip():
+			return None
 		try:
 			result = int(result)
 		except ValueError:
@@ -874,7 +876,8 @@ def band_ranges(bands):
 def choose_device(devices):
 	if len(devices) == 1:
 		return devices[0]
-	return devices[menu("Choose a device: ", [f"{device.name} (serial {device.serial})" for device in devices])]
+	index = menu("Choose a device (blank to cancel): ", [f"{device.name} (serial {device.serial})" for device in devices])
+	return None if index is None else devices[index]
 
 
 class RadioCLI:
@@ -919,9 +922,13 @@ class RadioCLI:
 		if not groups:
 			self.show_message(f"error: No Sonos speaker named {name}." if name else "error: No Sonos speakers found.")
 			return
-		group = groups[0]
+		index = 0
 		if len(groups) > 1:
-			group = groups[self.prompt(lambda: menu("Cast to: ", [sonos_cast.group_label(group) for group in groups]))]
+			index = self.prompt(lambda: menu("Cast to (blank to cancel): ", [sonos_cast.group_label(group) for group in groups]))
+			if index is None:
+				self.show_status()
+				return
+		group = groups[index]
 		caster = sonos_cast.Caster(self.receiver, group, AUDIO_RATE)
 		caster.on_skip = self.seek
 		caster.on_change = self.show_status
@@ -1104,7 +1111,10 @@ def main():
 	if not devices:
 		print("error: No RTL-SDR devices found.")
 		return 1
-	receiver = Receiver(choose_device(devices).index, args.frequency, region)
+	device = choose_device(devices)
+	if device is None:
+		return 0
+	receiver = Receiver(device.index, args.frequency, region)
 	receiver.county = args.county
 	RadioCLI(receiver, args.alert_mode, args.sonos).run()
 	if receiver.error:
