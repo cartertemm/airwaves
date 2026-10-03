@@ -12,16 +12,16 @@ The commands need Python 3.10 or later and [uv](https://docs.astral.sh/uv/). In 
 uv sync
 ```
 
-Then run each command with `uv run`, for example `uv run sdr 97.9` or `uv run tunein "jazz"`. To cast to Sonos speakers, install the extra packages for it:
+Then run each command with `uv run`, for example `uv run sdr 97.9` or `uv run tunein "jazz"`. To cast to Sonos speakers or AirPlay devices, install the extra packages for them:
 
 ```
-uv sync --extra sonos
+uv sync --extra sonos --extra airplay
 ```
 
 To use the commands from any folder without `uv run`, install them as tools instead:
 
 ```
-uv tool install ".[sonos]"
+uv tool install ".[sonos,airplay]"
 ```
 
 ## SDR Listener
@@ -36,7 +36,7 @@ uv tool install ".[sonos]"
 * Scanning up or down to the next station in the band.
 * US and European band settings. In Europe, AM is 531 to 1602 kHz in 9 kHz steps, FM uses 50 microsecond de-emphasis, and there is no NOAA weather radio.
 * The status line and the window title show the frequency, and optionally the signal strength.
-* Casting to Sonos speakers, with the station and song shown in the Sonos app.
+* Casting to Sonos speakers, with the station and song shown in the Sonos app, or to AirPlay devices.
 
 AM and shortwave use the dongle's direct sampling mode. Some dongles need a hardware change before direct sampling picks up anything. Direct sampling stops at 14.4 MHz, so the shortwave bands above that need an upconverter. Shortwave also needs a long wire antenna, ideally outside.
 
@@ -89,36 +89,45 @@ The keys work on Windows only.
 | `t` | Type a frequency in MHz |
 | `m` | Mute or unmute |
 | `i` | Show or hide the signal strength |
-| `c` | Start or stop casting to Sonos |
+| `c` | Start or stop casting to Sonos or AirPlay |
 | `h` | List the keys |
 | Ctrl+C | Quit |
 
 The keyboard's Previous Track and Next Track keys also scan, even when another window has focus.
 
-### Casting to Sonos
+### Casting to Sonos or AirPlay
 
-Casting needs the extra Sonos packages (see Installing):
+Casting needs extra packages (see Installing): the `sonos` extra for Sonos, and the `airplay` extra for AirPlay.
 
-```
-uv sync --extra sonos
-```
+Press `c` while the script runs to start or stop casting. It lists the Sonos groups and the AirPlay devices it finds, side by side, for you to choose from. Sonos speakers also support AirPlay, so they show up in both lists.
 
-Add `--sonos` and the name of a speaker. The radio plays on that speaker's group, as the groups are set up in the Sonos app. Without a name, the script lists the groups for you to choose from. You can also press `c` to start or stop casting while the script runs.
+To cast from the start, add `--sonos` or `--airplay` and a name. Without a name, the script lists only that kind for you to choose from.
 
 ```
 uv run sdr 97.9 --sonos Kitchen
+uv run sdr 97.9 --airplay Office
 uv run sdr 97.9 --sonos
 ```
 
-While casting:
+While casting, the computer is silent, and Space, `_`, `+`, and `m` pause, change the volume of, and mute the speakers.
 
-* The computer is silent. The Sonos speakers play about 4 seconds behind the radio.
-* Space, `_`, `+`, and `m` pause, change the volume of, and mute the Sonos group.
+#### Sonos
+
+* The radio plays on that speaker's group, as the groups are set up in the Sonos app.
+* The Sonos speakers play about 4 seconds behind the radio.
 * The skip buttons on the speakers and in the Sonos app scan to the previous or next station.
 * The Sonos app shows the frequency and station name, and the song from RDS.
 * If someone plays something else on the speakers, the script plays on the computer again.
 
 Casting replaces the Sonos queue for the group. When you stop casting or quit, the speakers stop.
+
+#### AirPlay
+
+* AirPlay plays to one device at a time.
+* The skip buttons on the device do not scan. Use the keys or the keyboard's media keys instead.
+* The device shows the station, and the song from RDS when casting starts. It does not update while the station plays.
+* Sonos speakers keep their volume. Other AirPlay devices start at 30%.
+* A Sonos speaker that is in a group leaves the group while AirPlay plays. When casting stops, the script puts it back, if the `sonos` extra is installed.
 
 The first time you cast, Windows may ask whether Python can use the network. Allow it on private networks, or the speakers cannot reach the script.
 

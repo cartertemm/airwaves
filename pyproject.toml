@@ -17,6 +17,10 @@ sonos = [
 	"lameenc",
 	"soco",
 ]
+airplay = [
+	"lameenc",
+	"pyatv",
+]
 
 [project.scripts]
 sdr = "radio_utils.sdr:main"

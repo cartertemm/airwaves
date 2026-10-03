@@ -6,7 +6,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import lameenc
 import numpy as np
-import soco
 
 BITRATE = 320
 MP3_QUALITY = 2
@@ -28,6 +27,7 @@ PLAYING_COPY = 1
 
 def find_groups():
 	"""Returns the Sonos groups on the network, as they are set up in the Sonos app."""
+	import soco
 	speakers = soco.discover(timeout=DISCOVER_SECONDS)
 	if not speakers:
 		return []
@@ -74,8 +74,14 @@ def icy_metadata(title):
 	return bytes([len(text) // 16]) + text
 
 
+def station_title(receiver):
+	"""Players show the part before " - " as the artist and the rest as the title, so put the station first and the RDS text after."""
+	station = " ".join(part for part in (receiver.band.format(receiver.freq_mhz), receiver.rds_name) if part)
+	return f"{station} - {receiver.rds_text}" if receiver.rds_text else station
+
+
 class StreamHandler(BaseHTTPRequestHandler):
-	"""Sends the live MP3 stream to one Sonos connection."""
+	"""Sends the live MP3 stream to one connection."""
 
 	protocol_version = "HTTP/1.0"
 
@@ -83,7 +89,7 @@ class StreamHandler(BaseHTTPRequestHandler):
 		pass
 
 	def do_GET(self):
-		caster = self.server.caster
+		stream = self.server.stream
 		wants_metadata = self.headers.get("Icy-MetaData") == "1"
 		self.send_response(200)
 		self.send_header("Content-Type", "audio/mpeg")
@@ -91,10 +97,10 @@ class StreamHandler(BaseHTTPRequestHandler):
 			self.send_header("icy-metaint", str(META_INTERVAL))
 		self.end_headers()
 		client = queue.Queue(maxsize=CLIENT_BACKLOG)
-		caster.add_client(client)
+		stream.add_client(client)
 		until_metadata = META_INTERVAL
 		try:
-			while caster.running:
+			while stream.running:
 				try:
 					data = client.get(timeout=CLIENT_WAIT_SECONDS)
 				except queue.Empty:
@@ -107,87 +113,56 @@ class StreamHandler(BaseHTTPRequestHandler):
 					self.wfile.write(part)
 					until_metadata -= len(part)
 					if until_metadata == 0:
-						self.wfile.write(icy_metadata(caster.title()))
+						self.wfile.write(icy_metadata(station_title(stream.receiver)))
 						until_metadata = META_INTERVAL
 		except OSError:
 			pass
 		finally:
-			caster.remove_client(client)
+			stream.remove_client(client)
 
 
-class Caster:
-	"""Plays a Receiver's audio on a Sonos group, and turns the Sonos skip buttons into scans.
+class StreamServer:
+	"""Serves a Receiver's audio as a live MP3 stream over HTTP, with the station and RDS text as its title.
 
-	Override or assign on_skip, on_change, and on_lost to react to Sonos. They run on a background thread."""
+	With hold_new_connections, new connections get silence until release() moves them to the live stream."""
 
-	def __init__(self, receiver, group, audio_rate):
+	def __init__(self, receiver, audio_rate, host, hold_new_connections=False):
 		self.receiver = receiver
-		self.coordinator = group.coordinator
-		self.name = group_label(group)
 		self.audio_rate = audio_rate
-		# New connections get silence until the next poll, because a skip button makes Sonos connect again
-		# before the poll can see the skip. Sonos waits for data before it answers, so the poll cannot run sooner.
+		self.host = host
+		self.hold_new_connections = hold_new_connections
 		self.clients = set()
 		self.pending = set()
 		self.clients_lock = threading.Lock()
 		self.running = False
-		self.position = None
-		self.status = (False, False)
 
 	def start(self):
 		self.running = True
 		self.silence = silent_chunk(self.audio_rate)
-		self.server = ThreadingHTTPServer(("", 0), StreamHandler)
+		self.server = ThreadingHTTPServer((self.host, 0), StreamHandler)
 		self.server.daemon_threads = True
-		self.server.caster = self
-		# Sonos reports the playing item as x-rincon-mp3radio://http://address/..., so match on the address part.
-		self.stream_address = f"{local_ip(self.coordinator.ip_address)}:{self.server.server_address[1]}/stream/"
-		for target in (self.server.serve_forever, self.encode, self.poll):
+		self.server.stream = self
+		self.address = f"{self.host}:{self.server.server_address[1]}/stream/"
+		for target in (self.server.serve_forever, self.encode):
 			threading.Thread(target=target, daemon=True).start()
-		self.play_mode = self.coordinator.play_mode
-		self.coordinator.clear_queue()
-		for copy in range(QUEUE_COPIES):
-			self.coordinator.add_uri_to_queue(f"x-rincon-mp3radio://{self.stream_address}{copy}.mp3")
-		self.coordinator.play_from_queue(PLAYING_COPY)
-		# Sonos only takes a play mode while the queue is what plays.
-		self.coordinator.play_mode = "REPEAT_ALL"
-		self.receiver.local_audio = False
 
-	def stop(self, release=True):
-		"""Stops casting and plays on this computer again. release=False leaves Sonos alone, for when it already plays something else."""
+	def stop(self):
 		self.running = False
-		try:
-			if release:
-				self.coordinator.stop()
-				self.coordinator.play_mode = self.play_mode
-				self.coordinator.clear_queue()
-		finally:
-			self.server.shutdown()
-			self.receiver.local_audio = True
-
-	def title(self):
-		"""Sonos shows the part before " - " as the artist and the rest as the title, so put the station first and the RDS text after."""
-		receiver = self.receiver
-		station = " ".join(part for part in (receiver.band.format(receiver.freq_mhz), receiver.rds_name) if part)
-		return f"{station} - {receiver.rds_text}" if receiver.rds_text else station
-
-	def on_skip(self, direction):
-		"""Called with 1 or -1 when a Sonos skip button is pressed."""
-
-	def on_change(self):
-		"""Called when Sonos is paused, resumed, muted, or unmuted."""
-
-	def on_lost(self):
-		"""Called when the group switches to another source. Polling has stopped; call stop(release=False) to leave Sonos alone."""
+		self.server.shutdown()
 
 	def add_client(self, client):
 		with self.clients_lock:
-			self.pending.add(client)
+			(self.pending if self.hold_new_connections else self.clients).add(client)
 
 	def remove_client(self, client):
 		with self.clients_lock:
 			self.pending.discard(client)
 			self.clients.discard(client)
+
+	def waiting(self):
+		"""Returns the connections that get silence now."""
+		with self.clients_lock:
+			return set(self.pending)
 
 	def release(self, waiting):
 		"""Moves connections from silence to the live stream."""
@@ -213,16 +188,68 @@ class Caster:
 			next_time += CHUNK_SECONDS
 			time.sleep(max(0, next_time - time.monotonic()))
 
+
+class Caster:
+	"""Plays a Receiver's audio on a Sonos group, and turns the Sonos skip buttons into scans.
+
+	Override or assign on_skip, on_change, and on_lost to react to Sonos. They run on a background thread."""
+
+	kind = "Sonos"
+
+	def __init__(self, receiver, group, audio_rate):
+		self.receiver = receiver
+		self.coordinator = group.coordinator
+		self.name = group_label(group)
+		# New connections get silence until the next poll, because a skip button makes Sonos connect again
+		# before the poll can see the skip. Sonos waits for data before it answers, so the poll cannot run sooner.
+		self.stream = StreamServer(receiver, audio_rate, local_ip(self.coordinator.ip_address), hold_new_connections=True)
+		self.running = False
+		self.position = None
+		self.status = (False, False)
+
+	def start(self):
+		self.running = True
+		self.stream.start()
+		threading.Thread(target=self.poll, daemon=True).start()
+		self.play_mode = self.coordinator.play_mode
+		self.coordinator.clear_queue()
+		for copy in range(QUEUE_COPIES):
+			self.coordinator.add_uri_to_queue(f"x-rincon-mp3radio://{self.stream.address}{copy}.mp3")
+		self.coordinator.play_from_queue(PLAYING_COPY)
+		# Sonos only takes a play mode while the queue is what plays.
+		self.coordinator.play_mode = "REPEAT_ALL"
+		self.receiver.local_audio = False
+
+	def stop(self, release=True):
+		"""Stops casting and plays on this computer again. release=False leaves Sonos alone, for when it already plays something else."""
+		self.running = False
+		try:
+			if release:
+				self.coordinator.stop()
+				self.coordinator.play_mode = self.play_mode
+				self.coordinator.clear_queue()
+		finally:
+			self.stream.stop()
+			self.receiver.local_audio = True
+
+	def on_skip(self, direction):
+		"""Called with 1 or -1 when a Sonos skip button is pressed."""
+
+	def on_change(self):
+		"""Called when Sonos is paused, resumed, muted, or unmuted."""
+
+	def on_lost(self):
+		"""Called when the group switches to another source. Polling has stopped; call stop(release=False) to leave Sonos alone."""
+
 	def poll(self):
 		while self.running:
 			time.sleep(POLL_SECONDS)
 			# Only connections that arrived before this poll asked Sonos can be released by it.
-			with self.clients_lock:
-				waiting = set(self.pending)
+			waiting = self.stream.waiting()
 			try:
 				self.check()
 			finally:
-				self.release(waiting)
+				self.stream.release(waiting)
 
 	def check(self):
 		"""Asks Sonos for its state once: scans on a skip, and reports pauses, mutes, and another source taking over."""
@@ -236,7 +263,8 @@ class Caster:
 		if not self.running:
 			# stop() changes the queue position, which is not a skip.
 			return
-		if self.stream_address not in track["uri"]:
+		# Sonos reports the playing item as x-rincon-mp3radio://http://address/..., so match on the address part.
+		if self.stream.address not in track["uri"]:
 			# Before Sonos first plays the stream, the previous source still shows.
 			if self.position is not None and track["uri"]:
 				self.running = False

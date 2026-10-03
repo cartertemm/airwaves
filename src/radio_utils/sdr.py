@@ -2,6 +2,7 @@ import argparse
 import collections
 import ctypes
 import locale
+import logging
 import queue
 import re
 import shutil
@@ -9,6 +10,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, replace
+from functools import partial
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -117,8 +119,9 @@ SCAN_LOW_OFFSET = 100000
 SCAN_HIGH_OFFSET = 600000
 
 KEY_POLL_SECONDS = 0.02
-HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "m: mute", "i: show/hide signal", "c: cast to Sonos", "h: help", "Ctrl+C: quit")
+HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "m: mute", "i: show/hide signal", "c: cast to Sonos or AirPlay", "h: help", "Ctrl+C: quit")
 HELP_KEYS_PER_LINE = 3
+CAST_KINDS = ("sonos", "airplay")
 HELP_TEXT = "\n".join(", ".join(HELP_KEYS[i:i + HELP_KEYS_PER_LINE]) for i in range(0, len(HELP_KEYS), HELP_KEYS_PER_LINE))
 TITLE_LENGTH = 1024
 VK_MEDIA_NEXT_TRACK = 0xB0
@@ -883,7 +886,7 @@ def choose_device(devices):
 class RadioCLI:
 	"""Keyboard controls and a status line for a Receiver."""
 
-	def __init__(self, receiver, alert_mode=False, sonos=None):
+	def __init__(self, receiver, alert_mode=False, sonos=None, airplay=None):
 		self.receiver = receiver
 		self.receiver.on_status_change = self.show_status
 		self.receiver.on_alert = self.announce_alert
@@ -892,6 +895,7 @@ class RadioCLI:
 		if alert_mode:
 			receiver.muted = True
 		self.sonos = sonos
+		self.airplay = airplay
 		self.caster = None
 		self.display_lock = threading.Lock()
 		self.prompting = False
@@ -910,34 +914,54 @@ class RadioCLI:
 				self.caster.paused = False
 		self.show_message(alert.describe())
 
-	def start_cast(self, name=None):
-		try:
-			from . import sonos_cast
-		except ImportError:
-			self.show_message("error: Casting needs two more packages: pip install soco lameenc")
-			return
-		groups = sonos_cast.find_groups()
+	def cast_targets(self, kinds):
+		"""Returns (label, names, make caster) for each Sonos group and AirPlay device found, sorted so the same room sits together.
+
+		Each kind needs its extra packages. A kind whose packages are missing finds nothing."""
+		targets = []
+		if "sonos" in kinds:
+			try:
+				from . import sonos_cast
+				groups = sonos_cast.find_groups()
+			except ImportError:
+				groups = []
+			targets += [(f"{sonos_cast.group_label(group)} (Sonos)", [member.player_name for member in group.members], partial(sonos_cast.Caster, self.receiver, group, AUDIO_RATE)) for group in groups]
+		if "airplay" in kinds:
+			try:
+				from . import airplay_cast
+				devices = airplay_cast.find_devices()
+			except ImportError:
+				devices = []
+			targets += [(f"{device.name} (AirPlay)", [device.name], partial(airplay_cast.AirPlayCaster, self.receiver, device, AUDIO_RATE)) for device in devices]
+		return sorted(targets, key=lambda target: target[0].lower())
+
+	def start_cast(self, kinds=CAST_KINDS, name=None):
+		targets = self.cast_targets(kinds)
 		if name:
-			groups = [group for group in groups if name.lower() in (member.player_name.lower() for member in group.members)]
-		if not groups:
-			self.show_message(f"error: No Sonos speaker named {name}." if name else "error: No Sonos speakers found.")
+			targets = [target for target in targets if name.lower() in (target_name.lower() for target_name in target[1])]
+		if not targets:
+			self.show_message(f"error: No speaker named {name}." if name else "error: No speakers found. Sonos needs the sonos extra and AirPlay the airplay extra.")
 			return
 		index = 0
-		if len(groups) > 1:
-			index = self.prompt(lambda: menu("Cast to (blank to cancel): ", [sonos_cast.group_label(group) for group in groups]))
+		if len(targets) > 1:
+			index = self.prompt(lambda: menu("Cast to (blank to cancel): ", [label for label, names, make in targets]))
 			if index is None:
 				self.show_status()
 				return
-		group = groups[index]
-		caster = sonos_cast.Caster(self.receiver, group, AUDIO_RATE)
-		caster.on_skip = self.seek
-		caster.on_change = self.show_status
-		caster.on_lost = self.cast_lost
-		caster.start()
+		label, names, make = targets[index]
+		try:
+			caster = make()
+			caster.on_skip = self.seek
+			caster.on_change = self.show_status
+			caster.on_lost = self.cast_lost
+			caster.start()
+		except Exception as error:
+			self.show_message(f"error: Could not cast to {label}: {error}")
+			return
 		self.caster = caster
 		if self.waiting_for_alert:
 			caster.paused = True
-		self.show_message(f"Casting to Sonos: {caster.name}")
+		self.show_message(f"Casting to {label}")
 
 	def stop_cast(self):
 		caster, self.caster = self.caster, None
@@ -947,7 +971,7 @@ class RadioCLI:
 	def cast_lost(self):
 		caster, self.caster = self.caster, None
 		caster.stop(release=False)
-		self.show_message("Sonos switched to another source. Playing here again.")
+		self.show_message(f"{caster.kind}: {caster.name} stopped playing the radio. Playing here again.")
 
 	def watch_media_keys(self):
 		"""Scans when the keyboard's Previous Track or Next Track key is pressed, even when another window has focus."""
@@ -968,7 +992,7 @@ class RadioCLI:
 		output = self.output
 		parts = [receiver.band.format(receiver.freq_mhz), f"Signal {receiver.signal_db} dB" if self.show_signal else "", receiver.rds_name]
 		if self.caster:
-			parts.append(f"Sonos: {self.caster.name}")
+			parts.append(f"{self.caster.kind}: {self.caster.name}")
 		if output.muted:
 			parts.append("Muted")
 		if output.paused:
@@ -1071,7 +1095,9 @@ class RadioCLI:
 		self.receiver.start()
 		threading.Thread(target=self.watch_media_keys, daemon=True).start()
 		if self.sonos is not None:
-			self.start_cast(self.sonos)
+			self.start_cast(("sonos",), self.sonos)
+		if self.airplay is not None:
+			self.start_cast(("airplay",), self.airplay)
 		try:
 			while self.receiver.running:
 				key = read_key()
@@ -1097,8 +1123,12 @@ def main():
 	parser.add_argument("--region", choices=REGIONS, help="Band plan to use. Default is from the system's country setting.")
 	parser.add_argument("--county", help="Only report weather alerts for this 5 or 6 digit county FIPS code.")
 	parser.add_argument("--alert-mode", action="store_true", help="Keep the sound off until a weather alert arrives. Needs a NOAA frequency.")
-	parser.add_argument("--sonos", nargs="?", const="", metavar="SPEAKER", help="Cast to the Sonos group with this speaker in it. Without a name, choose from a list.")
+	cast = parser.add_mutually_exclusive_group()
+	cast.add_argument("--sonos", nargs="?", const="", metavar="SPEAKER", help="Cast to the Sonos group with this speaker in it. Without a name, choose from a list.")
+	cast.add_argument("--airplay", nargs="?", const="", metavar="DEVICE", help="Cast to this AirPlay device. Without a name, choose from a list.")
 	args = parser.parse_args()
+	# Library log messages would print over the status line. Without a handler, the first one also turns on console logging for all of them.
+	logging.getLogger().addHandler(logging.NullHandler())
 	region = args.region or detect_region()
 	band = band_for(args.frequency, REGIONS[region])
 	if band is None:
@@ -1116,7 +1146,7 @@ def main():
 		return 0
 	receiver = Receiver(device.index, args.frequency, region)
 	receiver.county = args.county
-	RadioCLI(receiver, args.alert_mode, args.sonos).run()
+	RadioCLI(receiver, args.alert_mode, args.sonos, args.airplay).run()
 	if receiver.error:
 		print(f"error: {receiver.error}")
 		return 1
