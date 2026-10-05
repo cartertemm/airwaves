@@ -1,5 +1,7 @@
 # Airwaves
 
+If you don't have Python or don't want to worry about the internals, you can [download the Windows app here](https://github.com/cartertemm/airwaves/releases/latest).
+
 This repository contains commands for digitally receiving and getting information about radio stations.
 
 The primary application is `sdr`, a radio receiver that plays AM, shortwave, FM, aviation, and NOAA weather radio from an RTL-SDR USB dongle. The other commands find nearby stations and their stream URLs through online services such as TuneIn and Broadcastify.
