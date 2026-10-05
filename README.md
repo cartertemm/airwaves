@@ -53,7 +53,7 @@ The other commands are not in the executable.
 
 AM and shortwave use the dongle's direct sampling mode. Some dongles need a hardware change before direct sampling picks up anything. Direct sampling stops at 14.4 MHz, so the shortwave bands above that need an upconverter. Shortwave also needs a long wire antenna, ideally outside.
 
-HD Radio uses libnrsc5 from the [nrsc5](https://github.com/theori-io/nrsc5) project, which is included. While HD plays, nrsc5 reads the dongle, so the signal strength shows as MER (how clean the digital signal is) and scanning goes back to analog first. A station takes about 3 seconds to start playing HD1.
+HD Radio uses libnrsc5 from the [nrsc5](https://github.com/theori-io/nrsc5) project, which is included. The included DLL is built from upstream commit 9beb2c7 (`nrsc5.NRSC5.get_version()` returns it). While HD plays, nrsc5 reads the dongle, so the signal strength shows as MER (how clean the digital signal is) and scanning goes back to analog first. A station takes about 3 seconds to start playing HD1.
 
 ### Running
 
@@ -185,9 +185,9 @@ receiver.stop()
 | `stereo` | True when the station sends stereo. |
 | `signal_db` | Signal strength: how far the station is above the noise, in whole dB. |
 | `rds_name`, `rds_text` | The station name and radio text sent with RDS, or empty text. FM stereo stations only. |
-| `hd_start()`, `hd_stop()`, `hd_active` | Start and stop HD Radio on the current FM station. `hd_start()` raises `sdr.HdUnavailable` if libnrsc5 cannot load. While HD is active, `tune()` and `seek()` go back to analog first. |
+| `hd_start()`, `hd_stop()`, `hd_active` | Start and stop HD Radio on the current FM station. `hd_start()` raises `sdr.HdUnavailable` if libnrsc5 cannot load. It raises `sdr.nrsc5.NRSC5Error` if nrsc5 cannot open the dongle, and analog plays again. While HD is active, `tune()` and `seek()` go back to analog first. |
 | `hd_locked`, `hd_mer` | Whether HD is locked, and the last digital signal quality as `(lower, upper)` dB. |
-| `hd_programs`, `hd_program`, `select_hd_program(program)`, `hd_program_step(direction)` | The HD channels found, as a dict of program number to name (0 is HD1), the playing channel, how to play another, and the channel after (`1`) or before (`-1`) the playing one (`None` past either end). HD1 plays by itself once its audio arrives. While HD is active, `rds_name` is the HD station name and `rds_text` is "artist - title". |
+| `hd_programs`, `hd_program`, `select_hd_program(program)`, `hd_program_step(direction)` | The HD channels found, as a dict of program number to name (0 is HD1), the playing channel, how to play another, and the channel after (`1`) or before (`-1`) the playing one (`None` past either end). HD1 plays by itself once its audio arrives. HD can take about 3 seconds to lock, so a program that uses the API should wait for `hd_locked` and go back with `hd_stop()` if it does not lock. While HD is active, `rds_name` is the HD station name and `rds_text` is "artist - title". |
 | `on_status_change` | Called with no arguments when `stereo`, `signal_db`, `rds_name`, `rds_text`, or the HD state changes. It runs on a background thread. |
 | `county` | A county FIPS code. When set, alerts for other counties are ignored. |
 | `alert`, `on_alert` | The latest weather alert, an `sdr.Alert` with `name`, `event`, `locations`, `issued`, `expires`, and `describe()`. `on_alert` is called with each new alert from a background thread. |
