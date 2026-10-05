@@ -18,6 +18,8 @@ import pyaudio
 from rtlsdr import RtlSdr
 from rtlsdr.librtlsdr import librtlsdr
 
+from . import nrsc5
+
 VERSION = "0.1"
 VERSION_TEXT = f"SDR Tuner version {VERSION}"
 VOLUME_STEP = 10
@@ -32,6 +34,9 @@ MPX_RATE = 288000
 AUDIO_RATE = 48000
 HD_AUDIO_RATE = 44100
 PCM_SCALE = 32768
+# A station with HD Radio locks in about 1 second.
+HD_LOCK_SECONDS = 3
+HD_IDLE_SECONDS = 0.05
 SDR_DECIMATION = SDR_RATE // MPX_RATE
 AUDIO_DECIMATION = MPX_RATE // AUDIO_RATE
 # Tune below the station so the dongle's DC spike stays out of the channel.
@@ -151,6 +156,8 @@ class Band:
 	khz: bool = False
 	# Weather radio emits SAME alert headers and the 1050 Hz alarm tone.
 	alerts: bool = False
+	# FM stations can send HD Radio (NRSC-5) channels beside the analog signal.
+	hd: bool = False
 
 	def format(self, freq_mhz):
 		return f"{freq_mhz * 1000:.0f} kHz" if self.khz else f"{freq_mhz:.{self.digits}f} MHz"
@@ -161,7 +168,7 @@ class Band:
 		return self.narrow_cutoff or self.step_mhz * 1e6 / 2
 
 
-FM = Band(min_mhz=87.5, max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6)
+FM = Band(min_mhz=87.5, max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6, hd=True)
 NOAA = Band(min_mhz=162.4, max_mhz=162.55, step_mhz=0.025, digits=3, max_deviation=5000, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, alerts=True)
 AM = Band(min_mhz=0.53, max_mhz=1.7, step_mhz=0.01, digits=2, max_deviation=None, narrow_cutoff=5000, audio_cutoff=5000, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13, khz=True)
 # Direct sampling stops at 14.4 MHz, half of the dongle's 28.8 MHz converter rate.
@@ -689,16 +696,19 @@ def list_devices():
 	return [Device(i, librtlsdr.rtlsdr_get_device_name(i).decode(errors="replace"), serial) for i, serial in zip(range(count), serials)]
 
 
+class HdUnavailable(Exception):
+	"""libnrsc5 could not load."""
+
+
 class Receiver:
 	"""Plays stereo FM from an RTL-SDR dongle through the default sound card.
 
-	Call start() to begin playing and stop() when done. on_status_change, if set, is called with no arguments from a background thread when stereo, signal_db, rds_name, or rds_text changes."""
+	Call start() to begin playing and stop() when done. on_status_change, if set, is called with no arguments from a background thread when stereo, signal_db, rds_name, rds_text, or the HD state changes."""
 
 	def __init__(self, device_index, freq_mhz, region=None):
 		self.bands = REGIONS[region or detect_region()]
-		self.sdr = RtlSdr(device_index=device_index)
-		self.sdr.sample_rate = SDR_RATE
-		self.sdr.gain = SDR_GAIN
+		self.device_index = device_index
+		self.open_sdr()
 		self.sdr_lock = threading.RLock()
 		self.band = None
 		self.demodulator = None
@@ -720,6 +730,9 @@ class Receiver:
 		self.on_alert = None
 		self.on_status_change = None
 		self.error = None
+		self.hd = None
+		self.hd_resampler = Resampler(HD_AUDIO_RATE, AUDIO_RATE)
+		self.reset_hd()
 		self.running = True
 		self.audio = pyaudio.PyAudio()
 		self.stream = self.audio.open(format=pyaudio.paFloat32, channels=2, rate=AUDIO_RATE, output=True, stream_callback=self.fill_audio)
@@ -743,6 +756,121 @@ class Receiver:
 		self.is_paused = paused
 		self.buffer.clear()
 
+	def open_sdr(self):
+		self.sdr = RtlSdr(device_index=self.device_index)
+		self.sdr.sample_rate = SDR_RATE
+		self.sdr.gain = SDR_GAIN
+
+	def notify_status(self):
+		if self.on_status_change:
+			self.on_status_change()
+
+	@property
+	def hd_active(self):
+		"""True while nrsc5 holds the dongle, from hd_start() until hd_stop(), tune(), or seek()."""
+		return self.hd is not None
+
+	def reset_hd(self):
+		self.hd_locked = False
+		self.hd_program = None
+		self.hd_programs = {}
+		self.hd_mer = None
+		self.hd_resampler.reset()
+
+	def hd_start(self):
+		"""Hands the dongle to nrsc5 to play HD Radio on the current FM station. HD1 plays once its audio arrives, about 3 seconds later.
+
+		Raises HdUnavailable if libnrsc5 cannot load, with analog still playing. Raises nrsc5.NRSC5Error if nrsc5 cannot open the dongle, with analog playing again."""
+		try:
+			radio = nrsc5.NRSC5(self.hd_event)
+		except (OSError, nrsc5.NRSC5Error) as error:
+			raise HdUnavailable(error) from error
+		with self.sdr_lock:
+			# Wait for the block being decoded, or its analog audio would play after the fade.
+			self.raw_blocks.join()
+			self.buffer.cut(FADE_FRAMES)
+			self.sdr.close()
+			self.sdr = None
+			self.reset_hd()
+			self.rds_name = self.rds_text = ""
+			try:
+				radio.open(self.device_index)
+			except nrsc5.NRSC5Error:
+				self.tune(self.freq_mhz)
+				raise
+			self.hd = radio
+			radio.set_auto_gain(True)
+			radio.set_frequency(self.freq_mhz * 1e6)
+			radio.start()
+		self.notify_status()
+
+	def hd_stop(self):
+		"""Gives the dongle back to the analog receiver on the same frequency."""
+		with self.sdr_lock:
+			if self.hd:
+				self.tune(self.freq_mhz)
+		self.notify_status()
+
+	def close_hd(self):
+		"""Stops nrsc5 and frees the dongle. Call with sdr_lock held."""
+		radio, self.hd = self.hd, None
+		self.hd_program = None
+		radio.stop()
+		radio.close()
+		self.reset_hd()
+		self.rds_name = self.rds_text = ""
+
+	def select_hd_program(self, program):
+		"""Plays HD channel program of the current station. 0 is HD1."""
+		self.hd_program = program
+		self.hd_resampler.reset()
+		self.rds_text = ""
+		self.buffer.cut(FADE_FRAMES)
+		self.notify_status()
+
+	def hd_program_step(self, direction):
+		"""Returns the HD channel found after (direction 1) or before (direction -1) the playing one, or None past either end or while no channel plays."""
+		programs = sorted(self.hd_programs)
+		if self.hd_program not in programs:
+			return None
+		index = programs.index(self.hd_program) + direction
+		return programs[index] if 0 <= index < len(programs) else None
+
+	def hd_event(self, event_type, event):
+		"""Runs on the nrsc5 thread. It must not take sdr_lock, because close_hd holds it while it waits for this thread."""
+		if event_type == nrsc5.EventType.AUDIO:
+			self.hd_audio(event)
+			return
+		if event_type == nrsc5.EventType.SYNC:
+			self.hd_locked = True
+		elif event_type == nrsc5.EventType.LOST_SYNC:
+			self.hd_locked = False
+		elif event_type == nrsc5.EventType.MER:
+			self.hd_mer = (event.lower, event.upper)
+		elif event_type == nrsc5.EventType.STATION_NAME:
+			self.rds_name = (event.name or "").strip()
+		elif event_type == nrsc5.EventType.ID3:
+			if event.program != self.hd_program:
+				return
+			self.rds_text = " - ".join(part for part in (event.artist, event.title) if part)
+		elif event_type == nrsc5.EventType.SIG:
+			# SIG numbers audio services from 1, and audio events number programs from 0.
+			names = {service.number - 1: (service.name or "").strip() for service in event if service.type == nrsc5.ServiceType.AUDIO}
+			self.hd_programs = {**self.hd_programs, **names}
+		else:
+			return
+		self.notify_status()
+
+	def hd_audio(self, event):
+		if event.program not in self.hd_programs:
+			self.hd_programs = {**self.hd_programs, event.program: ""}
+			self.notify_status()
+		if self.hd_program is None and event.program == 0 and self.hd:
+			self.select_hd_program(0)
+		if event.program == self.hd_program and not self.is_paused:
+			pcm = np.frombuffer(event.data, dtype=np.int16).reshape(-1, 2)
+			self.buffer.put(self.hd_resampler.process(pcm / PCM_SCALE))
+
 	def start(self):
 		for thread in self.threads:
 			thread.start()
@@ -754,6 +882,10 @@ class Receiver:
 		freq_mhz = round(freq_mhz, 3)
 		center_freq = round(freq_mhz * 1e6) - TUNE_OFFSET
 		with self.sdr_lock:
+			if self.hd:
+				self.close_hd()
+			if self.sdr is None:
+				self.open_sdr()
 			was_direct = bool(self.band and self.band.direct_sampling)
 			if band.direct_sampling != was_direct:
 				if was_direct:
@@ -778,8 +910,14 @@ class Receiver:
 		# Only read here, so the next read starts right away and the dongle does not drop samples.
 		while self.running:
 			with self.sdr_lock:
-				tune_count, band = self.tune_count, self.band
-				raw = np.ctypeslib.as_array(self.sdr.read_bytes(BLOCK_SIZE * 2)).copy()
+				if self.sdr is None:
+					raw = None
+				else:
+					tune_count, band = self.tune_count, self.band
+					raw = np.ctypeslib.as_array(self.sdr.read_bytes(BLOCK_SIZE * 2)).copy()
+			if raw is None:
+				time.sleep(HD_IDLE_SECONDS)
+				continue
 			try:
 				self.raw_blocks.put_nowait((tune_count, band, raw))
 			except queue.Full:
@@ -841,6 +979,8 @@ class Receiver:
 		"""Tunes to the next station up (direction 1) or down (direction -1) in the current band, wrapping at the band edges.
 
 		Blocks while scanning. Returns the new frequency, or None if no other station was found."""
+		if self.hd:
+			self.hd_stop()
 		band = self.band
 		count = round((band.max_mhz - band.min_mhz) / band.step_mhz) + 1
 		start = round((self.freq_mhz - band.min_mhz) / band.step_mhz)
@@ -877,10 +1017,14 @@ class Receiver:
 		for thread in self.threads:
 			if thread.is_alive():
 				thread.join()
+		with self.sdr_lock:
+			if self.hd:
+				self.close_hd()
 		self.stream.stop_stream()
 		self.stream.close()
 		self.audio.terminate()
-		self.sdr.close()
+		if self.sdr:
+			self.sdr.close()
 
 
 def menu(prompt, items):
