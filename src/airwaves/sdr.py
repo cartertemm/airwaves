@@ -599,23 +599,25 @@ class Resampler:
 	"""Converts stereo audio from in_rate to out_rate by linear interpolation, carrying its position across blocks."""
 
 	def __init__(self, in_rate, out_rate):
-		self.step = in_rate / out_rate
+		self.in_rate = in_rate
+		self.out_rate = out_rate
 		self.reset()
 
 	def reset(self):
 		self.last = np.zeros((1, 2), dtype=np.float32)
-		self.position = 0.0
+		# The next output frame's position in input frames, times out_rate, so it stays exact across blocks.
+		self.position = 0
 
 	def process(self, audio):
 		# Position 0 is the last frame of the previous block.
 		samples = np.concatenate((self.last, audio))
 		end = len(samples) - 1
-		count = max(0, int(np.ceil((end - self.position) / self.step)))
-		positions = self.position + np.arange(count) * self.step
+		count = max(0, -(-(end * self.out_rate - self.position) // self.in_rate))
+		positions = (self.position + np.arange(count) * self.in_rate) / self.out_rate
 		index = positions.astype(int)
 		fraction = (positions - index)[:, None]
 		out = samples[index] * (1 - fraction) + samples[np.minimum(index + 1, end)] * fraction
-		self.position += count * self.step - end
+		self.position += count * self.in_rate - end * self.out_rate
 		self.last = samples[-1:]
 		return out.astype(np.float32)
 
