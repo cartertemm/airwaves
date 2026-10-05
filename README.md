@@ -24,6 +24,16 @@ To use the commands from any folder without `uv run`, install them as tools inst
 uv tool install ".[sonos,airplay]"
 ```
 
+### Building a Windows executable
+
+To give the receiver to someone who does not have Python, run `build.bat`. It builds `dist\sdr.exe`, one file that includes Python, the packages, and the dongle driver, with Sonos and AirPlay casting:
+
+```
+build.bat
+```
+
+The other commands are not in the executable.
+
 ## SDR Listener
 
 ### Features
