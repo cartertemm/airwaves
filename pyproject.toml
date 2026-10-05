@@ -9,7 +9,6 @@ dependencies = [
 	"pyaudio",
 	"pyrtlsdr",
 	"pyrtlsdrlib",
-	"scipy",
 ]
 
 [project.optional-dependencies]

@@ -17,7 +17,6 @@ import numpy as np
 import pyaudio
 from rtlsdr import RtlSdr
 from rtlsdr.librtlsdr import librtlsdr
-from scipy import signal
 
 VOLUME_STEP = 10
 DEFAULT_VOLUME = 50
@@ -50,6 +49,8 @@ PILOT_MIN_LEVEL = 0.02
 PILOT_SMOOTHING = 0.3
 # Removes the AM carrier level, which is everything below about 20 Hz.
 DC_BLOCK_POLE = 1 - 2 * np.pi * 20 / MPX_RATE
+# De-emphasis runs as a filter of this many taps. Its response falls below 1e-15 well within them.
+DEEMPHASIS_TAPS = 128
 RDS_FREQ = 57000
 RDS_HALF_WIDTH = 2400
 # The RDS bit clock is the pilot divided by 16, so one bit lasts 16 pilot cycles.
@@ -190,6 +191,35 @@ def detect_region():
 	return "eu" if country.upper() in EUROPE_COUNTRIES else "us"
 
 
+def fir_taps(count, low, high, rate):
+	"""Returns Hamming windowed taps that pass low to high Hz, with a gain of 1 at the band center. A low of 0 gives a low-pass filter with a gain of 1 at 0 Hz."""
+	n = np.arange(count) - (count - 1) / 2
+	taps = (2 * high / rate) * np.sinc(2 * high * n / rate) - (2 * low / rate) * np.sinc(2 * low * n / rate)
+	taps *= np.hamming(count)
+	center = (low + high) / 2 if low else 0
+	return taps / np.sum(taps * np.cos(2 * np.pi * center * n / rate))
+
+
+def fir_filter(taps, samples, history):
+	"""Filters samples, or each row of samples, with taps. history holds the last len(taps) - 1 samples of the previous call, and the new history is returned."""
+	padded = np.concatenate((history, samples), axis=-1)
+	if padded.ndim == 1:
+		filtered = np.convolve(padded, taps, "valid")
+	else:
+		filtered = np.array([np.convolve(row, taps, "valid") for row in padded])
+	return filtered, padded[..., samples.shape[-1]:]
+
+
+def dc_block(samples, state):
+	"""Removes the DC from samples with a one-pole high-pass filter. state is the last input and output of the previous call, and the new state is returned."""
+	last_input, last_output = state
+	difference = samples - np.concatenate(([last_input], samples[:-1]))
+	# Solves output[n] = difference[n] + DC_BLOCK_POLE * output[n - 1] without a loop. The pole is close to 1, so the powers stay in range for a whole block.
+	powers = DC_BLOCK_POLE ** np.arange(1, len(samples) + 1)
+	output = powers * (last_output + np.cumsum(difference / powers))
+	return output, (samples[-1], output[-1])
+
+
 class Spectrum:
 	"""The power spectrum of one capture, used to measure channels in it."""
 
@@ -292,7 +322,7 @@ class AlertDecoder:
 		n = self.sample_index + np.arange(len(audio))
 		self.sample_index += len(audio)
 		mixed = audio * np.exp(-2j * np.pi * np.outer((SAME_MARK, SAME_SPACE), n) / AUDIO_RATE)
-		tones, self.filter_state = signal.lfilter(np.ones(self.bit_samples) / self.bit_samples, 1, mixed, axis=1, zi=self.filter_state)
+		tones, self.filter_state = fir_filter(np.ones(self.bit_samples) / self.bit_samples, mixed, self.filter_state)
 		# Positive where the mark tone, a 1 bit, is stronger.
 		soft = (np.abs(tones[0]) ** 2 - np.abs(tones[1]) ** 2)[::SAME_DECIMATION]
 		step = SAME_BAUD * SAME_DECIMATION / AUDIO_RATE
@@ -360,7 +390,7 @@ class RdsDecoder:
 	"""Decodes the station name and radio text from the RDS signal of one FM station."""
 
 	def __init__(self):
-		self.taps = signal.firwin(PILOT_TAPS, [RDS_FREQ - RDS_HALF_WIDTH, RDS_FREQ + RDS_HALF_WIDTH], pass_zero=False, fs=MPX_RATE)
+		self.taps = fir_taps(PILOT_TAPS, RDS_FREQ - RDS_HALF_WIDTH, RDS_FREQ + RDS_HALF_WIDTH, MPX_RATE)
 		self.state = np.zeros(PILOT_TAPS - 1)
 		self.reset()
 
@@ -387,7 +417,7 @@ class RdsDecoder:
 
 	def process(self, mpx, pilot):
 		"""Takes the multiplex signal and the analytic pilot, which the band-pass filter here delays by the same amount."""
-		rds, self.state = signal.lfilter(self.taps, 1, mpx, zi=self.state)
+		rds, self.state = fir_filter(self.taps, mpx, self.state)
 		angles = np.angle(pilot)
 		theta = np.unwrap(np.concatenate(([angles[0] if self.theta is None else self.theta], angles)))[1:]
 		self.theta = theta[-1]
@@ -486,22 +516,22 @@ class Demodulator:
 		self.band = band
 		n = np.arange(BLOCK_SIZE)
 		self.mixer = np.exp(-2j * np.pi * TUNE_OFFSET * n / SDR_RATE)
-		self.channel_taps = signal.firwin(CHANNEL_TAPS, CHANNEL_CUTOFF, fs=SDR_RATE)
+		self.channel_taps = fir_taps(CHANNEL_TAPS, 0, CHANNEL_CUTOFF, SDR_RATE)
 		self.channel_state = np.zeros(CHANNEL_TAPS - 1, dtype=complex)
 		if band.narrow_cutoff:
-			self.narrow_taps = signal.firwin(CHANNEL_TAPS, band.narrow_cutoff, fs=MPX_RATE)
+			self.narrow_taps = fir_taps(CHANNEL_TAPS, 0, band.narrow_cutoff, MPX_RATE)
 			self.narrow_state = np.zeros(CHANNEL_TAPS - 1, dtype=complex)
 		self.last_sample = 1 + 0j
-		self.dc_state = np.zeros(1)
+		self.dc_state = (0.0, 0.0)
 		n = np.arange(PILOT_TAPS) - (PILOT_TAPS - 1) // 2
-		self.pilot_taps = signal.firwin(PILOT_TAPS, PILOT_HALF_WIDTH, fs=MPX_RATE) * np.exp(2j * np.pi * PILOT_FREQ * n / MPX_RATE)
+		self.pilot_taps = fir_taps(PILOT_TAPS, 0, PILOT_HALF_WIDTH, MPX_RATE) * np.exp(2j * np.pi * PILOT_FREQ * n / MPX_RATE)
 		self.pilot_state = np.zeros(PILOT_TAPS - 1, dtype=complex)
 		self.pilot_delay = np.zeros((PILOT_TAPS - 1) // 2)
-		self.audio_taps = signal.firwin(AUDIO_TAPS, band.audio_cutoff, fs=MPX_RATE)
+		self.audio_taps = fir_taps(AUDIO_TAPS, 0, band.audio_cutoff, MPX_RATE)
 		self.audio_state = np.zeros((2, AUDIO_TAPS - 1))
 		alpha = np.exp(-1 / (AUDIO_RATE * band.deemphasis_tau)) if band.deemphasis_tau else 0
-		self.deemphasis = ([1 - alpha], [1, -alpha])
-		self.deemphasis_state = np.zeros((2, 1))
+		self.deemphasis_taps = (1 - alpha) * alpha ** np.arange(DEEMPHASIS_TAPS)
+		self.deemphasis_state = np.zeros((2, DEEMPHASIS_TAPS - 1))
 		freqs = np.fft.rfftfreq(BLOCK_SIZE // SDR_DECIMATION, 1 / MPX_RATE)
 		self.pilot_bins = np.abs(freqs - PILOT_FREQ) < 2 * (freqs[1] - freqs[0])
 		self.noise_bins = (freqs > PILOT_NOISE_BAND[0]) & (freqs < PILOT_NOISE_BAND[1])
@@ -517,20 +547,20 @@ class Demodulator:
 		here = spectrum.channel_powers(TUNE_OFFSET, self.band)[0]
 		self.signal_db += SIGNAL_SMOOTHING * (10 * np.log10(here / spectrum.floor) - self.signal_db)
 		baseband = samples * self.mixer[:len(samples)]
-		baseband, self.channel_state = signal.lfilter(self.channel_taps, 1, baseband, zi=self.channel_state)
+		baseband, self.channel_state = fir_filter(self.channel_taps, baseband, self.channel_state)
 		baseband = baseband[::SDR_DECIMATION]
 		if self.band.narrow_cutoff:
-			baseband, self.narrow_state = signal.lfilter(self.narrow_taps, 1, baseband, zi=self.narrow_state)
+			baseband, self.narrow_state = fir_filter(self.narrow_taps, baseband, self.narrow_state)
 		if self.band.am:
 			envelope = np.abs(baseband)
-			mpx, self.dc_state = signal.lfilter([1, -1], [1, -DC_BLOCK_POLE], envelope / envelope.mean(), zi=self.dc_state)
+			mpx, self.dc_state = dc_block(envelope / envelope.mean(), self.dc_state)
 		else:
 			previous = np.concatenate(([self.last_sample], baseband[:-1]))
 			self.last_sample = baseband[-1]
 			mpx = np.angle(baseband * np.conj(previous)) * MPX_RATE / (2 * np.pi * self.band.max_deviation)
 		if self.band.stereo:
 			self.update_stereo(mpx)
-		pilot, self.pilot_state = signal.lfilter(self.pilot_taps, 1, mpx, zi=self.pilot_state)
+		pilot, self.pilot_state = fir_filter(self.pilot_taps, mpx, self.pilot_state)
 		delayed = np.concatenate((self.pilot_delay, mpx))
 		self.pilot_delay = delayed[len(mpx):]
 		delayed = delayed[:len(mpx)]
@@ -546,10 +576,10 @@ class Demodulator:
 			stacked = np.vstack((delayed, 2 * delayed * carrier))
 		else:
 			stacked = np.vstack((delayed, np.zeros_like(delayed)))
-		filtered, self.audio_state = signal.lfilter(self.audio_taps, 1, stacked, axis=1, zi=self.audio_state)
+		filtered, self.audio_state = fir_filter(self.audio_taps, stacked, self.audio_state)
 		mono, difference = filtered[:, ::AUDIO_DECIMATION]
 		channels = np.vstack((mono + difference, mono - difference))
-		channels, self.deemphasis_state = signal.lfilter(*self.deemphasis, channels, axis=1, zi=self.deemphasis_state)
+		channels, self.deemphasis_state = fir_filter(self.deemphasis_taps, channels, self.deemphasis_state)
 		if self.band.alerts:
 			self.alerts.process(channels[0])
 		return channels.T
