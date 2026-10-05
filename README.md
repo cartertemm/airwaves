@@ -69,6 +69,8 @@ uv run sdr 162.55
 
 If you have more than one dongle, the script asks you to choose one before it starts playback.
 
+The script prints its version when it starts. To only print the version, run `uv run sdr --version` (or `-v`).
+
 The script picks US or European band settings from the country in your system settings. this is obtained through the Windows region, or the `LANG` setting on Linux and macOS. If that is not set, it falls back to US. You can override this by invoking `sdr` with `--region us` or `--region eu`:
 
 ```

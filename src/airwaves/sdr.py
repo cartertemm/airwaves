@@ -18,14 +18,16 @@ import pyaudio
 from rtlsdr import RtlSdr
 from rtlsdr.librtlsdr import librtlsdr
 
+VERSION = "0.1"
+VERSION_TEXT = f"SDR Tuner version {VERSION}"
 VOLUME_STEP = 10
 DEFAULT_VOLUME = 50
 MAX_VOLUME = 100
-# Station audio peaks near full scale, so leave headroom for the sound card.
+# Station audio peaks near full scale, leave headroom for the sound card.
 OUTPUT_LEVEL = 0.5
 
 SDR_RATE = 1440000
-# A loud stereo signal is about 256 kHz wide, so this rate leaves room for all of it.
+# A loud stereo signal is about 256 kHz wide.
 MPX_RATE = 288000
 AUDIO_RATE = 48000
 SDR_DECIMATION = SDR_RATE // MPX_RATE
@@ -47,13 +49,13 @@ STEREO_THRESHOLD = 10.0
 # Stations send the pilot at about 0.1 of full deviation.
 PILOT_MIN_LEVEL = 0.02
 PILOT_SMOOTHING = 0.3
-# Removes the AM carrier level, which is everything below about 20 Hz.
+# Removes the AM carrier level, or everything below about 20 Hz.
 DC_BLOCK_POLE = 1 - 2 * np.pi * 20 / MPX_RATE
 # De-emphasis runs as a filter of this many taps. Its response falls below 1e-15 well within them.
 DEEMPHASIS_TAPS = 128
 RDS_FREQ = 57000
 RDS_HALF_WIDTH = 2400
-# The RDS bit clock is the pilot divided by 16, so one bit lasts 16 pilot cycles.
+# The RDS bit clock is the pilot divided by 16 - so one bit lasts 16 pilot cycles.
 RDS_BIT_PHASE = 16 * 2 * np.pi
 RDS_TIMING_STEPS = 16
 RDS_AXIS_SMOOTHING = 0.9
@@ -96,9 +98,8 @@ ALARM_RATIO = 0.6
 ALARM_SECONDS = 1
 # A tone this soon after a SAME header belongs to that header's alert.
 ALARM_AFTER_HEADER_SECONDS = 30
-# A tone has no end time, so show its alert for this long.
 ALARM_SHOW_MINUTES = 10
-# The dongle delivers audio in bursts, so hold some back to keep the sound card fed between bursts.
+# The dongle delivers audio in bursts. Hold some back to keep the sound card fed between bursts.
 PREFILL_FRAMES = AUDIO_RATE // 4
 MAX_BUFFER_FRAMES = AUDIO_RATE
 MAX_QUEUED_BLOCKS = 10
@@ -111,11 +112,9 @@ SCAN_SAMPLES = 32768
 SIGNAL_SMOOTHING = 0.3
 # The shown signal level only changes once the measured level moves this far from it, so it does not flicker between two numbers.
 SIGNAL_HYSTERESIS_DB = 1
-# Skip the tuner settling noise after each retune while scanning.
+# Skip the tuner noise after each retune while scanning.
 SCAN_SETTLE_BYTES = 8192
-# HD Radio sidebands sit two channels from a station and 14 dB or more below it.
 SCAN_SIDEBAND_RATIO = 10 ** (10 / 10)
-# A scan only measures channels in this part of a capture, away from the spike at its center and the roll-off at its edges.
 SCAN_LOW_OFFSET = 100000
 SCAN_HIGH_OFFSET = 600000
 
@@ -148,7 +147,7 @@ class Band:
 	# Bands below the tuner's range feed the antenna straight to the dongle's converter.
 	direct_sampling: bool = False
 	khz: bool = False
-	# Weather radio carries SAME alert headers and the 1050 Hz alarm tone.
+	# Weather radio emits SAME alert headers and the 1050 Hz alarm tone.
 	alerts: bool = False
 
 	def format(self, freq_mhz):
@@ -214,7 +213,7 @@ def dc_block(samples, state):
 	"""Removes the DC from samples with a one-pole high-pass filter. state is the last input and output of the previous call, and the new state is returned."""
 	last_input, last_output = state
 	difference = samples - np.concatenate(([last_input], samples[:-1]))
-	# Solves output[n] = difference[n] + DC_BLOCK_POLE * output[n - 1] without a loop. The pole is close to 1, so the powers stay in range for a whole block.
+	# Solves output[n] = difference[n] + DC_BLOCK_POLE * output[n - 1] without a loop.
 	powers = DC_BLOCK_POLE ** np.arange(1, len(samples) + 1)
 	output = powers * (last_output + np.cumsum(difference / powers))
 	return output, (samples[-1], output[-1])
@@ -363,7 +362,7 @@ class AlertDecoder:
 			return
 		header = match.group(0)
 		self.header_seconds = self.seconds
-		# Each header is sent three times. Report it once two copies match, and only once.
+		# Each header is sent three times. Report it only once two copies match.
 		if header in self.reported:
 			return
 		if header not in self.candidates:
@@ -487,7 +486,7 @@ class RdsDecoder:
 			self.name_chars[segment * 2:segment * 2 + 2] = rds_chars(d)
 			self.name_segments |= 1 << segment
 			if self.name_segments == 0xF:
-				# A station can change the text partway through sending it, so only show a name once it arrives the same way twice in a row.
+				# A station can change the text partway through sending it.
 				frame = "".join(self.name_chars)
 				if frame == self.name_frame:
 					self.name = frame.strip()
@@ -564,7 +563,7 @@ class Demodulator:
 		delayed = np.concatenate((self.pilot_delay, mpx))
 		self.pilot_delay = delayed[len(mpx):]
 		delayed = delayed[:len(mpx)]
-		# RDS takes its carrier and bit clock from the stereo pilot, so it only runs while there is one.
+		# RDS takes its carrier and bit clock from the stereo pilot.
 		if self.stereo:
 			self.rds.process(mpx, pilot)
 		else:
@@ -1149,6 +1148,7 @@ class RadioCLI:
 
 def main():
 	parser = argparse.ArgumentParser(description="Listen to AM, FM, or NOAA weather radio with an RTL-SDR dongle.")
+	parser.add_argument("-v", "--version", action="version", version=VERSION_TEXT)
 	parser.add_argument("frequency", type=float, nargs="?", default=FM.min_mhz, help=f"Frequency in MHz. Default is {FM.min_mhz}.")
 	parser.add_argument("--region", choices=REGIONS, help="Band plan to use. Default is from the system's country setting.")
 	parser.add_argument("--county", help="Only report weather alerts for this 5 or 6 digit county FIPS code.")
@@ -1157,6 +1157,7 @@ def main():
 	cast.add_argument("--sonos", nargs="?", const="", metavar="SPEAKER", help="Cast to the Sonos group with this speaker in it. Without a name, choose from a list.")
 	cast.add_argument("--airplay", nargs="?", const="", metavar="DEVICE", help="Cast to this AirPlay device. Without a name, choose from a list.")
 	args = parser.parse_args()
+	print(VERSION_TEXT)
 	# Library log messages would print over the status line. Without a handler, the first one also turns on console logging for all of them.
 	logging.getLogger().addHandler(logging.NullHandler())
 	region = args.region or detect_region()
