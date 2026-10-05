@@ -3,9 +3,10 @@ import os
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-# pyrtlsdrlib loads the dongle driver DLL from its own folder, and the casting
+# pyrtlsdrlib and nrsc5 load their DLLs from their own folder, and the casting
 # modules are only imported when casting, so PyInstaller cannot find them alone.
 datas, binaries, hiddenimports = collect_all("pyrtlsdrlib")
+binaries += [(os.path.join(SPECPATH, "src", "airwaves", "libnrsc5.dll"), "airwaves")]
 hiddenimports += collect_submodules("pyatv") + collect_submodules("soco")
 hiddenimports += ["airwaves.sonos_cast", "airwaves.airplay_cast"]
 
