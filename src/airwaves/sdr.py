@@ -126,7 +126,7 @@ SCAN_LOW_OFFSET = 100000
 SCAN_HIGH_OFFSET = 600000
 
 KEY_POLL_SECONDS = 0.02
-HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "m: mute", "i: show/hide signal", "c: cast to Sonos or AirPlay", "h: help", "Ctrl+C: quit")
+HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "m: mute", "i: show/hide signal", "d: next HD channel", "D: previous HD channel", "c: cast to Sonos or AirPlay", "h: help", "Ctrl+C: quit")
 HELP_KEYS_PER_LINE = 3
 CAST_KINDS = ("sonos", "airplay")
 HELP_TEXT = "\n".join(", ".join(HELP_KEYS[i:i + HELP_KEYS_PER_LINE]) for i in range(0, len(HELP_KEYS), HELP_KEYS_PER_LINE))
@@ -1192,7 +1192,19 @@ class RadioCLI:
 	def status_text(self):
 		receiver = self.receiver
 		output = self.output
-		parts = [receiver.band.format(receiver.freq_mhz), f"Signal {receiver.signal_db} dB" if self.show_signal else "", receiver.rds_name]
+		frequency = receiver.band.format(receiver.freq_mhz)
+		signal = f"Signal {receiver.signal_db} dB" if self.show_signal else ""
+		name = receiver.rds_name
+		lost = False
+		if receiver.hd_active:
+			program, mer = receiver.hd_program, receiver.hd_mer
+			frequency += " HD" if program is None else f" HD{program + 1} of {len(receiver.hd_programs)}"
+			signal = f"MER {mer[0]:.1f}/{mer[1]:.1f} dB" if self.show_signal and mer else ""
+			name = receiver.hd_programs.get(program) or name
+			lost = program is not None and not receiver.hd_locked
+		parts = [frequency, signal, name]
+		if lost:
+			parts.append("HD signal lost")
 		if self.caster:
 			parts.append(f"{self.caster.kind}: {self.caster.name}")
 		if output.muted:
@@ -1254,6 +1266,50 @@ class RadioCLI:
 		if band_for(freq_mhz, self.receiver.bands) is self.receiver.band:
 			self.receiver.tune(freq_mhz)
 
+	def step_hd(self, direction):
+		"""Moves through analog, HD1, HD2, and so on: forward for direction 1, back for -1."""
+		receiver = self.receiver
+		if not receiver.band.hd:
+			self.show_message("HD works only on FM.")
+			return
+		if not receiver.hd_active:
+			self.start_hd()
+			return
+		program = receiver.hd_program_step(direction)
+		if program is None:
+			receiver.hd_stop()
+			self.show_message("Analog")
+			return
+		receiver.select_hd_program(program)
+		self.show_message(f"HD{program + 1} {receiver.hd_programs[program]}".strip())
+
+	def start_hd(self):
+		self.show_message("Checking for HD...")
+		try:
+			self.receiver.hd_start()
+		except HdUnavailable as error:
+			self.show_message(f"HD not available: {error}")
+			return
+		except nrsc5.NRSC5Error as error:
+			self.show_message(f"error: Could not start HD: {error}")
+			return
+		threading.Thread(target=self.wait_for_hd_lock, args=(self.receiver.hd,), daemon=True).start()
+
+	def wait_for_hd_lock(self, radio):
+		"""Says when HD locks, or goes back to analog if it does not lock within HD_LOCK_SECONDS. Stops early if this HD session ends."""
+		receiver = self.receiver
+		deadline = time.monotonic() + HD_LOCK_SECONDS
+		while time.monotonic() < deadline:
+			if receiver.hd is not radio:
+				return
+			if receiver.hd_locked:
+				self.show_message("HD found, retrieving channels...")
+				return
+			time.sleep(KEY_POLL_SECONDS)
+		if receiver.hd is radio:
+			receiver.hd_stop()
+			self.show_message(f"No HD on {receiver.band.format(receiver.freq_mhz)}.")
+
 	def handle_key(self, key):
 		output = self.output
 		if key == " ":
@@ -1270,6 +1326,12 @@ class RadioCLI:
 			self.seek(-1)
 		elif key == "W":
 			self.seek(1)
+		elif key == "d":
+			self.step_hd(1)
+			return
+		elif key == "D":
+			self.step_hd(-1)
+			return
 		elif key == "m":
 			output.muted = not output.muted
 		elif key == "c":
