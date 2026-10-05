@@ -793,15 +793,21 @@ class Receiver:
 			self.sdr = None
 			self.reset_hd()
 			self.rds_name = self.rds_text = ""
+			opened = False
 			try:
 				radio.open(self.device_index)
+				opened = True
+				self.hd = radio
+				radio.set_auto_gain(True)
+				radio.set_frequency(self.freq_mhz * 1e6)
+				radio.start()
 			except nrsc5.NRSC5Error:
+				if self.hd:
+					self.close_hd()
+				elif opened:
+					radio.close()
 				self.tune(self.freq_mhz)
 				raise
-			self.hd = radio
-			radio.set_auto_gain(True)
-			radio.set_frequency(self.freq_mhz * 1e6)
-			radio.start()
 		self.notify_status()
 
 	def hd_stop(self):
@@ -885,7 +891,12 @@ class Receiver:
 			if self.hd:
 				self.close_hd()
 			if self.sdr is None:
-				self.open_sdr()
+				try:
+					self.open_sdr()
+				except Exception as error:
+					self.error = error
+					self.running = False
+					return
 			was_direct = bool(self.band and self.band.direct_sampling)
 			if band.direct_sampling != was_direct:
 				if was_direct:
@@ -929,9 +940,13 @@ class Receiver:
 				tune_count, band, raw = self.raw_blocks.get(timeout=QUEUE_TIMEOUT_SECONDS)
 			except queue.Empty:
 				continue
+			sdr = self.sdr
+			if sdr is None:
+				self.raw_blocks.task_done()
+				continue
 			if self.demodulator is None or band is not self.demodulator.band:
 				self.demodulator = Demodulator(band)
-			audio = self.demodulator.process(self.sdr.packed_bytes_to_iq(raw)).astype(np.float32)
+			audio = self.demodulator.process(sdr.packed_bytes_to_iq(raw)).astype(np.float32)
 			if tune_count != self.played_tune_count:
 				self.played_tune_count = tune_count
 				self.demodulator.rds.reset()
@@ -979,8 +994,6 @@ class Receiver:
 		"""Tunes to the next station up (direction 1) or down (direction -1) in the current band, wrapping at the band edges.
 
 		Blocks while scanning. Returns the new frequency, or None if no other station was found."""
-		if self.hd:
-			self.hd_stop()
 		band = self.band
 		count = round((band.max_mhz - band.min_mhz) / band.step_mhz) + 1
 		start = round((self.freq_mhz - band.min_mhz) / band.step_mhz)
@@ -990,6 +1003,10 @@ class Receiver:
 		center = None
 		found = None
 		with self.sdr_lock:
+			if self.hd:
+				self.tune(self.freq_mhz)
+				if self.sdr is None:
+					return None
 			# Fade out the current station. Wait for the block being decoded first, or it would play after the fade.
 			self.raw_blocks.join()
 			self.buffer.cut(FADE_FRAMES)
@@ -1281,7 +1298,7 @@ class RadioCLI:
 			self.show_message("Analog")
 			return
 		receiver.select_hd_program(program)
-		self.show_message(f"HD{program + 1} {receiver.hd_programs[program]}".strip())
+		self.show_message(f"HD{program + 1} {receiver.hd_programs.get(program, '')}".strip())
 
 	def start_hd(self):
 		self.show_message("Checking for HD...")
