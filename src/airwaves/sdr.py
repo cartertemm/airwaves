@@ -30,6 +30,8 @@ SDR_RATE = 1440000
 # A loud stereo signal is about 256 kHz wide.
 MPX_RATE = 288000
 AUDIO_RATE = 48000
+HD_AUDIO_RATE = 44100
+PCM_SCALE = 32768
 SDR_DECIMATION = SDR_RATE // MPX_RATE
 AUDIO_DECIMATION = MPX_RATE // AUDIO_RATE
 # Tune below the station so the dongle's DC spike stays out of the channel.
@@ -591,6 +593,31 @@ class Demodulator:
 		# A Hann windowed sine of amplitude A peaks at A * N / 4.
 		level = 4 * pilot / len(mpx)
 		self.stereo = bool(self.pilot_ratio > STEREO_THRESHOLD and level > PILOT_MIN_LEVEL)
+
+
+class Resampler:
+	"""Converts stereo audio from in_rate to out_rate by linear interpolation, carrying its position across blocks."""
+
+	def __init__(self, in_rate, out_rate):
+		self.step = in_rate / out_rate
+		self.reset()
+
+	def reset(self):
+		self.last = np.zeros((1, 2), dtype=np.float32)
+		self.position = 0.0
+
+	def process(self, audio):
+		# Position 0 is the last frame of the previous block.
+		samples = np.concatenate((self.last, audio))
+		end = len(samples) - 1
+		count = max(0, int(np.ceil((end - self.position) / self.step)))
+		positions = self.position + np.arange(count) * self.step
+		index = positions.astype(int)
+		fraction = (positions - index)[:, None]
+		out = samples[index] * (1 - fraction) + samples[np.minimum(index + 1, end)] * fraction
+		self.position += count * self.step - end
+		self.last = samples[-1:]
+		return out.astype(np.float32)
 
 
 class AudioBuffer:
