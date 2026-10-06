@@ -22,7 +22,7 @@ import pyaudio
 from rtlsdr import RtlSdr
 from rtlsdr.librtlsdr import librtlsdr
 
-from . import nrsc5
+from . import flight_log, nrsc5
 
 VERSION = "0.1"
 VERSION_TEXT = f"SDR Tuner version {VERSION}"
@@ -193,7 +193,7 @@ class Band:
 	alerts: bool = False
 	# FM stations can send HD Radio (NRSC-5) channels beside the analog signal.
 	hd: bool = False
-	# Channels decoded as ACARS at once instead of played. The capture centers between the lowest and highest.
+	# Channels decoded as ACARS. The capture centers between the lowest and highest.
 	acars_channels: tuple = ()
 
 	def format(self, freq_mhz):
@@ -910,14 +910,14 @@ class Device:
 
 @contextlib.contextmanager
 def quiet_driver():
-	"""Hides what librtlsdr prints while it opens and tunes the dongle, such as "Found Rafael Micro R820T tuner".
+	"""Hides what librtlsdr prints while it opens and tunes the dongle.
 
-	Both copies of librtlsdr (pyrtlsdrlib's and the one inside libnrsc5) print to the stderr of msvcrt.dll, which Python does not use, so Python's own errors still show."""
+	We make librtlsdr bundled with Pyrtlsdrlib and nrsc5 print to the stderr of msvcrt.dll, which Python does not use. This causes other errors to show as expected."""
 	if sys.platform != "win32":
 		yield
 		return
 	crt = ctypes.cdll.msvcrt
-	# stderr is buffered when it is not a console, so flush around the switch.
+	# stderr is buffered when it is not a console - flush around the switch.
 	crt.fflush(None)
 	saved = crt._dup(2)
 	discard = crt._open(b"NUL", os.O_WRONLY)
@@ -1182,7 +1182,6 @@ class Receiver:
 			self.running = False
 
 	def read(self):
-		# Only read here, so the next read starts right away and the dongle does not drop samples.
 		while self.running:
 			with self.sdr_lock:
 				if self.sdr is None:
@@ -1288,7 +1287,7 @@ class Receiver:
 				if has_station(spectrum, freq - center, band):
 					found = freq_mhz
 					break
-			# Tune before releasing the lock, so no block is read at the new frequency under the old tune count.
+			# Tune before releasing the lock so that no block is read at the new frequency under the old tune count.
 			self.tune(self.freq_mhz if found is None else found)
 		return found
 
@@ -1374,12 +1373,13 @@ def choose_device(devices):
 class RadioCLI:
 	"""Keyboard controls and a status line for a Receiver."""
 
-	def __init__(self, receiver, alert_mode=False, sonos=None, airplay=None):
+	def __init__(self, receiver, alert_mode=False, sonos=None, airplay=None, log=None):
 		self.receiver = receiver
 		self.receiver.on_status_change = self.show_status
 		self.receiver.on_alert = self.announce_alert
 		self.receiver.on_acars = self.announce_acars
 		self.acars_count = 0
+		self.log = log
 		self.alert_mode = alert_mode
 		self.waiting_for_alert = alert_mode
 		if alert_mode:
@@ -1405,9 +1405,18 @@ class RadioCLI:
 		self.show_message(alert.describe())
 
 	def announce_acars(self, message):
-		if message.text.strip():
-			self.acars_count += 1
-			self.show_message(message.describe())
+		if not message.text.strip():
+			return
+		self.acars_count += 1
+		try:
+			line = flight_log.describe(message)
+		except Exception:
+			# ACARS text has no fixed format, so show the message as sent rather than lose it.
+			line = message.describe()
+		self.show_message(line)
+		if self.log:
+			self.log.write(f"{line}\n\t{message.describe()}\n")
+			self.log.flush()
 
 	def toggle_acars(self):
 		receiver = self.receiver
@@ -1707,6 +1716,7 @@ def main():
 	parser.add_argument("--county", help="Only report weather alerts for this 5 or 6 digit county FIPS code.")
 	parser.add_argument("--alert-mode", action="store_true", help="Keep the sound off until a weather alert arrives. Needs a NOAA frequency.")
 	parser.add_argument("--acars", action="store_true", help="Start by decoding ACARS messages from aircraft. The a key goes back to the frequency.")
+	parser.add_argument("--log", metavar="FILE", help="Add each ACARS message to this file, as a readable line and as sent.")
 	cast = parser.add_mutually_exclusive_group()
 	cast.add_argument("--sonos", nargs="?", const="", metavar="SPEAKER", help="Cast to the Sonos group with this speaker in it. Without a name, choose from a list.")
 	cast.add_argument("--airplay", nargs="?", const="", metavar="DEVICE", help="Cast to this AirPlay device. Without a name, choose from a list.")
@@ -1731,11 +1741,17 @@ def main():
 	device = choose_device(devices)
 	if device is None:
 		return 0
+	try:
+		log = open(args.log, "a", encoding="utf-8") if args.log else None
+	except OSError as error:
+		print(f"error: Could not open the log file: {error}")
+		return 1
 	receiver = Receiver(device.index, args.frequency, region)
 	receiver.county = args.county
 	if args.acars:
 		receiver.acars_start()
-	RadioCLI(receiver, args.alert_mode, args.sonos, args.airplay).run()
+	with log or contextlib.nullcontext():
+		RadioCLI(receiver, args.alert_mode, args.sonos, args.airplay, log).run()
 	if receiver.error:
 		print(f"error: {receiver.error}")
 		return 1

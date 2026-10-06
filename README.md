@@ -99,7 +99,25 @@ ACARS is a system that aircraft and ground stations use to send short text messa
 uv run sdr --acars
 ```
 
-Each message with text prints on its own line with the time, channel, flight number (for messages from aircraft), and aircraft registration, for example `14:02 131.550 UA1234 N12345: POS N4012 W07400`. Messages without text, such as acknowledgments, do not print. The status line shows the channels and how many messages have printed. Press `a` again to go back to the frequency you were on. Tuning, stepping, or scanning also leaves ACARS.
+Each message with text prints as one readable line: the time, the flight and aircraft registration, where it flies from and to, what kind of message it is, and what it reports. For example, this message:
+
+```
+22:26 131.550 Y41747 XA-VLH: POSRPT 1747/06 KLAS/MMGL .XA-VLH /POS N33080W111591/ALT +36977/MCH 767/FOB 0080/ETA 0745
+```
+
+prints as:
+
+```
+22:26: Flight Y4 1747 (XA-VLH) from LAS (Las Vegas) to GDL (Guadalajara), position report, at 36,977 ft near CGZ (Casa Grande), Mach 0.767, fuel 80, ETA 00:45
+```
+
+The script reads the message type from the label and understands airport pairs (`KLAS/MMGL`), positions, and the `/ALT`, `/MCH`, `/FOB`, and `/ETA` fields. A position shows the closest airport. The ETA shows in your local time. Fuel shows the number as sent, because airlines use different units. Messages from the ground start with `Ground to` and the registration. ACARS text has no single format, so any text the script does not understand prints after a `|` at the end of the line. Messages without text, such as acknowledgments, do not print.
+
+To also save the messages to a file, add `--log` with a file name. Each message adds the readable line, then the message as sent on the next line:
+
+```
+uv run sdr --acars --log flights.txt
+``` The status line shows the channels and how many messages have printed. Press `a` again to go back to the frequency you were on. Tuning, stepping, or scanning also leaves ACARS.
 
 The script decodes these channels at the same time:
 
@@ -215,7 +233,7 @@ receiver.stop()
 | `hd_programs`, `hd_program`, `select_hd_program(program)`, `hd_program_step(direction)` | The HD channels found, as a dict of program number to name (0 is HD1), the playing channel, how to play another, and the channel after (`1`) or before (`-1`) the playing one (`None` past either end). HD1 plays by itself once its audio arrives. HD can take about 3 seconds to lock, so a program that uses the API should wait for `hd_locked` and go back with `hd_stop()` if it does not lock. While HD is active, `rds_name` is the HD station name and `rds_text` is "artist - title". |
 | `on_status_change` | Called with no arguments when `stereo`, `signal_db`, `rds_name`, `rds_text`, or the HD state changes. It runs on a background thread. |
 | `acars_start()`, `acars_stop()`, `acars_active` | Start and stop decoding ACARS. `acars_start()` tunes to the region's ACARS channels and plays silence. `acars_stop()` goes back to `freq_mhz`, which `acars_start()` does not change. `tune()` and `seek()` also stop ACARS. |
-| `on_acars` | Called with each decoded ACARS message from a background thread, including messages without text. Each is an `sdr.AcarsMessage` with `time`, `freq_mhz`, `mode`, `registration`, `label`, `block_id`, `flight`, `number`, `text`, and `describe()`. `flight` and `number` are only set on messages from aircraft. |
+| `on_acars` | Called with each decoded ACARS message from a background thread, including messages without text. Each is an `sdr.AcarsMessage` with `time`, `freq_mhz`, `mode`, `registration`, `label`, `block_id`, `flight`, `number`, `text`, and `describe()`. `flight` and `number` are only set on messages from aircraft. `flight_log.describe(message)` (`from airwaves import flight_log`) returns the readable line. |
 | `county` | A county FIPS code. When set, alerts for other counties are ignored. |
 | `alert`, `on_alert` | The latest weather alert, an `sdr.Alert` with `name`, `event`, `locations`, `issued`, `expires`, and `describe()`. `on_alert` is called with each new alert from a background thread. |
 | `running`, `error` | `running` becomes false if the dongle fails, and `error` holds the cause. |

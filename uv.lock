@@ -167,10 +167,37 @@ wheels = [
 ]
 
 [[package]]
+name = "airportsdata"
+version = "20260315"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/28/d2/5e25eb4af6a9150817b25a283ed25f74ace41c9544faa80ee7bc3ec2de36/airportsdata-20260315.tar.gz", hash = "sha256:eb67de3b8167bfe810020095188ebba043ed16e934cc52ba3930e2cbd1c2dcb6", size = 932567, upload-time = "2026-03-15T02:57:19.247Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/24/2e/cbf1b31fd5d069fb1d2c0f1142fde8bd515ad1a7d0272d05efff63c35eb4/airportsdata-20260315-py3-none-any.whl", hash = "sha256:22e03801468663fbee9a73e8864f25e3707acc1e43d0fc47586cc8c66365700a", size = 935379, upload-time = "2026-03-15T02:57:17.151Z" },
+]
+
+[[package]]
+name = "airportsdata"
+version = "20260905"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12'",
+    "python_full_version == '3.11.*'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a5/c2/69ec4b992746c4c7b076a7afffb11fc64267d684ed0cd3db00035f0f682b/airportsdata-20260905.tar.gz", hash = "sha256:a7e17469458ca356a5ca9971f49864b934a559d43e1587e19219cb981d364c45", size = 929470, upload-time = "2026-09-05T06:02:21.518Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/45/f8/65e9d476f84bb60ac7ff1fe525acdd60fe6b4b585ae6f074c947c6ad0fc1/airportsdata-20260905-py3-none-any.whl", hash = "sha256:d7eaa9a57d373b0adaaae0d52da2af0bb0edf73f7baa170f7c415d3342bf4868", size = 931164, upload-time = "2026-09-05T06:02:19.32Z" },
+]
+
+[[package]]
 name = "airwaves"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "airportsdata", version = "20260315", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "airportsdata", version = "20260905", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -191,6 +218,7 @@ sonos = [
 
 [package.metadata]
 requires-dist = [
+    { name = "airportsdata" },
     { name = "lameenc", marker = "extra == 'airplay'" },
     { name = "lameenc", marker = "extra == 'sonos'" },
     { name = "numpy" },
