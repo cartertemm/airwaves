@@ -72,9 +72,11 @@ The other commands are not in the executable.
 * The status line and the window title show the frequency, and optionally the signal strength.
 * Casting to Sonos speakers, with the station and song shown in the Sonos app, or to AirPlay devices.
 
-AM and shortwave use the dongle's direct sampling mode. Some dongles need a hardware change before direct sampling picks up anything. Direct sampling stops at 14.4 MHz, so the shortwave bands above that need an upconverter. Shortwave also needs a long wire antenna, ideally outside.
+AM and shortwave use the dongle's direct sampling mode. Some dongles need a hardware change before direct sampling picks up anything. Direct sampling stops at 14.4 MHz, so the shortwave bands above that need an upconverter.
 
-HD Radio uses libnrsc5 from the [nrsc5](https://github.com/theori-io/nrsc5) project, which is included. The included DLL is built from upstream commit 9beb2c7 (`nrsc5.NRSC5.get_version()` returns it). While HD plays, nrsc5 reads the dongle, so the signal strength shows as MER (how clean the digital signal is) and scanning goes back to analog first. A station takes about 3 seconds to start playing HD1.
+Shortwave also needs a long wire antenna, ideally placed outside.
+
+HD Radio uses libnrsc5 from the [nrsc5](https://github.com/theori-io/nrsc5) project, which is included. Because of this, a station will take about 3 seconds to start playing HD1.
 
 ### Running
 
@@ -119,7 +121,7 @@ ACARS is a system that aircraft and ground stations use to send short text messa
 uv run sdr --acars
 ```
 
-Each message with text prints as one readable line: the time, the flight and aircraft registration, where it flies from and to, what kind of message it is, and what it reports. For example, this message:
+Each message with text prints as one readable line containing the time, the flight and aircraft registration, where it flies from and to, what kind of message it is, and what it reports. For example, this message:
 
 ```
 22:26 131.550 Y41747 XA-VLH: POSRPT 1747/06 KLAS/MMGL .XA-VLH /POS N33080W111591/ALT +36977/MCH 767/FOB 0080/ETA 0745
@@ -131,13 +133,16 @@ prints as:
 22:26: Flight Y4 1747 (XA-VLH) from LAS (Las Vegas) to GDL (Guadalajara), position report, at 36,977 ft near CGZ (Casa Grande), Mach 0.767, fuel 80, ETA 00:45
 ```
 
-The script reads the message type from the label and understands airport pairs (`KLAS/MMGL`), positions, and the `/ALT`, `/MCH`, `/FOB`, and `/ETA` fields. A position shows the closest airport. The ETA shows in your local time. Fuel shows the number as sent, because airlines use different units. Messages from the ground start with `Ground to` and the registration. ACARS text has no single format, so any text the script does not understand prints after a `|` at the end of the line. Messages without text, such as acknowledgments, do not print.
+The script reads the message type from the label and understands airport pairs (`KLAS/MMGL`), positions, and the `/ALT`, `/MCH`, `/FOB`, and `/ETA` fields. A position shows the closest airport. The ETA shows in your local time. Fuel shows the number as sent since airlines use different units. Messages from the ground start with `Ground to` and the registration. ACARS text has no single format, so any text the script does not understand prints after a `|` at the end of the line. Messages without text, such as acknowledgments, do not print.
+If you find a message that is not printed correctly, please open an issue so we can fix it.
 
 To also save the messages to a file, add `--log` with a file name. Each message adds the readable line, then the message as sent on the next line:
 
 ```
-uv run sdr --acars --log flights.txt
-``` The status line shows the channels and how many messages have printed. Press `a` again to go back to the frequency you were on. Tuning, stepping, or scanning also leaves ACARS.
+uv run sdr --acars --log flights.log
+```
+
+The status line shows the channels and how many messages have printed. Press `a` again to go back to the frequency you were on. Tuning, stepping, or scanning also leaves ACARS mode.
 
 The script decodes these channels at the same time:
 
@@ -149,8 +154,8 @@ The script decodes these channels at the same time:
 Limits:
 
 * ACARS takes over the dongle. No sound plays, and you cannot listen to other frequencies (for example a control tower) while it decodes.
-* The dongle receives 1.44 MHz at a time, so only channels within that range decode together. In the US, 129.125 and 130.025 MHz are outside it.
-* Aircraft only send ACARS when they are in range, so expect few messages away from airports and flight paths.
+* The dongle receives 1.44 MHz at a time, which unfortunately means that only channels within that range decode together. In the US, 129.125 and 130.025 MHz are valid but outside this range.
+* Aircraft only send ACARS when they are in range. If you are not near an airport or a common flight path, do not expect too many messages.
 
 ### Keystrokes
 
@@ -183,7 +188,7 @@ When you press `d`, the analog sound stops and the script checks the station for
 
 Casting needs extra packages (see Installing): the `sonos` extra for Sonos, and the `airplay` extra for AirPlay.
 
-Press `c` while the script runs to start or stop casting. It lists the Sonos groups and the AirPlay devices it finds, side by side, for you to choose from. Sonos speakers also support AirPlay, so they show up in both lists.
+Press `c` while the script runs to start or stop casting. It lists the Sonos groups and the AirPlay devices it finds, side by side, for you to choose from. Sonos speakers will show up in both lists because they also support AirPlay.
 
 To cast from the start, add `--sonos` or `--airplay` and a name. Without a name, the script lists only that kind for you to choose from.
 
@@ -198,7 +203,7 @@ While casting, the computer is silent, and Space, `_`, `+`, and `m` pause, chang
 #### Sonos
 
 * The radio plays on that speaker's group, as the groups are set up in the Sonos app.
-* The Sonos speakers play about 4 seconds behind the radio.
+* The Sonos speakers play about 4 seconds behind the radio. This is a limitation caused by the way that the local Sonos API works and not anything we have control over.
 * The skip buttons on the speakers and in the Sonos app scan to the previous or next station.
 * The Sonos app shows the frequency and station name, and the song from RDS.
 * If someone plays something else on the speakers, the script plays on the computer again.
@@ -210,10 +215,10 @@ Casting replaces the Sonos queue for the group. When you stop casting or quit, t
 * AirPlay plays to one device at a time.
 * The skip buttons on the device do not scan. Use the keys or the keyboard's media keys instead.
 * The device shows the station, and the song from RDS when casting starts. It does not update while the station plays.
-* Sonos speakers keep their volume. Other AirPlay devices start at 30%.
+* Sonos speakers preserve their volume. Other AirPlay devices start at 30%.
 * A Sonos speaker that is in a group leaves the group while AirPlay plays. When casting stops, the script puts it back, if the `sonos` extra is installed.
 
-The first time you cast, Windows may ask whether Python can use the network. Allow it on private networks, or the speakers cannot reach the script.
+The first time you cast, Windows may ask whether Python can use the network. Allow it on private networks, otherwise the speakers will not be able to reach the script.
 
 ### Using the receiver from another program
 
