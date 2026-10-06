@@ -46,6 +46,7 @@ The other commands are not in the executable.
 * HD Radio channels (HD1, HD2, and so on) on FM stations that send them, with the station name, channel names, and the song.
 * The aviation band from 118.000 to 136.975 MHz, in 25 kHz channels. Aircraft and control towers only transmit when someone talks, so you hear static between transmissions.
 * NOAA weather radio from 162.400 to 162.550 MHz, with weather alerts. The script reads the alert codes (SAME) that stations send before each alert, and the 1050 Hz alarm tone.
+* ACARS messages from aircraft, decoded on several channels at once.
 * Scanning up or down to the next station in the band.
 * US and European band settings. In Europe, AM is 531 to 1602 kHz in 9 kHz steps, FM uses 50 microsecond de-emphasis, and there is no NOAA weather radio.
 * The status line and the window title show the frequency, and optionally the signal strength.
@@ -90,6 +91,29 @@ uv run sdr 162.55 --county 004013 --alert-mode
 
 Stations send a required weekly test, usually on Wednesday between 11 AM and noon local time. It shows as `ALERT: Required Weekly Test`.
 
+### ACARS
+
+ACARS is a system that aircraft and ground stations use to send short text messages, such as position reports, weather requests, and gate information. Press `a` to decode ACARS, or start with `--acars`:
+
+```
+uv run sdr --acars
+```
+
+Each message with text prints on its own line with the time, channel, flight number (for messages from aircraft), and aircraft registration, for example `14:02 131.550 UA1234 N12345: POS N4012 W07400`. Messages without text, such as acknowledgments, do not print. The status line shows the channels and how many messages have printed. Press `a` again to go back to the frequency you were on. Tuning, stepping, or scanning also leaves ACARS.
+
+The script decodes these channels at the same time:
+
+| Region | Channels (MHz) |
+| --- | --- |
+| US | 130.425, 130.450, 131.125, 131.550 |
+| Europe | 131.525, 131.725, 131.825 |
+
+Limits:
+
+* ACARS takes over the dongle. No sound plays, and you cannot listen to other frequencies (for example a control tower) while it decodes.
+* The dongle receives 1.44 MHz at a time, so only channels within that range decode together. In the US, 129.125 and 130.025 MHz are outside it.
+* Aircraft only send ACARS when they are in range, so expect few messages away from airports and flight paths.
+
 ### Keystrokes
 
 The keys work on Windows only.
@@ -106,6 +130,7 @@ The keys work on Windows only.
 | `t` | Type a frequency in MHz |
 | `m` | Mute or unmute |
 | `i` | Show or hide the signal strength |
+| `a` | Start or stop decoding ACARS |
 | `d` | Check for HD Radio, then go to the next HD channel. After the last channel, go back to analog. FM only. |
 | `D` (Shift+D) | Check for HD Radio, then go to the previous HD channel. From HD1, go back to analog. |
 | `c` | Start or stop casting to Sonos or AirPlay |
@@ -178,7 +203,7 @@ receiver.stop()
 | `Receiver(device_index, freq_mhz, region=None)` | Opens a dongle. `region` is `"us"` or `"eu"`. Without it, the receiver uses `detect_region()`, which reads the system's country setting. |
 | `start()`, `stop()` | Start and stop the dongle and audio. |
 | `tune(freq_mhz)`, `freq_mhz` | Change and read the frequency. AM, shortwave, FM, aviation, and NOAA frequencies all work. Other frequencies raise `ValueError`. |
-| `band` | The current band, `sdr.AM`, `sdr.SW`, `sdr.FM`, `sdr.AIR`, or `sdr.NOAA`. |
+| `band` | The current band, `sdr.AM`, `sdr.SW`, `sdr.FM`, `sdr.AIR`, or `sdr.NOAA`. While ACARS decodes, it is `sdr.ACARS` or `sdr.ACARS_EU`. |
 | `seek(direction)` | Scans up (`1`) or down (`-1`) to the next station in the band and tunes to it. It wraps at the band edges, blocks while scanning (usually under 1 second), and returns the new frequency, or `None` if it found no other station. |
 | `volume` | Volume from 0 to 100. |
 | `paused`, `muted` | Pause or mute the audio. |
@@ -189,6 +214,8 @@ receiver.stop()
 | `hd_locked`, `hd_mer` | Whether HD is locked, and the last digital signal quality as `(lower, upper)` dB. |
 | `hd_programs`, `hd_program`, `select_hd_program(program)`, `hd_program_step(direction)` | The HD channels found, as a dict of program number to name (0 is HD1), the playing channel, how to play another, and the channel after (`1`) or before (`-1`) the playing one (`None` past either end). HD1 plays by itself once its audio arrives. HD can take about 3 seconds to lock, so a program that uses the API should wait for `hd_locked` and go back with `hd_stop()` if it does not lock. While HD is active, `rds_name` is the HD station name and `rds_text` is "artist - title". |
 | `on_status_change` | Called with no arguments when `stereo`, `signal_db`, `rds_name`, `rds_text`, or the HD state changes. It runs on a background thread. |
+| `acars_start()`, `acars_stop()`, `acars_active` | Start and stop decoding ACARS. `acars_start()` tunes to the region's ACARS channels and plays silence. `acars_stop()` goes back to `freq_mhz`, which `acars_start()` does not change. `tune()` and `seek()` also stop ACARS. |
+| `on_acars` | Called with each decoded ACARS message from a background thread, including messages without text. Each is an `sdr.AcarsMessage` with `time`, `freq_mhz`, `mode`, `registration`, `label`, `block_id`, `flight`, `number`, `text`, and `describe()`. `flight` and `number` are only set on messages from aircraft. |
 | `county` | A county FIPS code. When set, alerts for other counties are ignored. |
 | `alert`, `on_alert` | The latest weather alert, an `sdr.Alert` with `name`, `event`, `locations`, `issued`, `expires`, and `describe()`. `on_alert` is called with each new alert from a background thread. |
 | `running`, `error` | `running` becomes false if the dongle fails, and `error` holds the cause. |

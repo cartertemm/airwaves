@@ -1,9 +1,11 @@
 import argparse
+import cmath
 import collections
 import contextlib
 import ctypes
 import locale
 import logging
+import math
 import os
 import queue
 import re
@@ -108,6 +110,37 @@ ALARM_SECONDS = 1
 # A tone this soon after a SAME header belongs to that header's alert.
 ALARM_AFTER_HEADER_SECONDS = 30
 ALARM_SHOW_MINUTES = 10
+# ACARS: text messages between aircraft and the ground, sent as 2400 bit per second MSK over AM.
+# Each channel is averaged down to ACARS_CHANNEL_RATE, then filtered and decimated to ACARS_RATE. The filter keeps out the channels 25 kHz away.
+ACARS_CHANNEL_RATE = 144000
+ACARS_RATE = 12000
+ACARS_CHANNEL_DECIMATION = SDR_RATE // ACARS_CHANNEL_RATE
+ACARS_DECIMATION = ACARS_CHANNEL_RATE // ACARS_RATE
+ACARS_CUTOFF = 4500
+ACARS_TAPS = 101
+# MSK shifts between 1200 and 2400 Hz. The demodulator mixes the tones down from their center, 1800 Hz.
+ACARS_TONE_STEP = 2 * np.pi * 1800 / ACARS_RATE
+# The mixer phase moves 3/2 pi in one bit.
+ACARS_BIT_PHASE = 3 * np.pi / 2
+# The matched filter spans two bits, and has ACARS_OVERSAMPLING versions to match where the bit lands between samples.
+ACARS_FILTER_LENGTH = ACARS_RATE // 1200 + 1
+ACARS_OVERSAMPLING = 12
+ACARS_PLL_GAIN = 38e-4
+ACARS_PLL_SMOOTHING = 0.52
+ACARS_SYN = 0x16
+ACARS_SOH = 0x01
+ACARS_STX = 0x02
+# Bytes carry odd parity in the top bit, so these are ETX and ETB with the parity bit set.
+ACARS_ETX = 0x83
+ACARS_ETB = 0x97
+ACARS_DEL = 0x7F
+# A header is mode, registration (7), acknowledgment, label (2), block ID, then STX or ETX.
+ACARS_HEADER_LENGTH = 13
+ACARS_MAX_LENGTH = 240
+ACARS_CRC_POLYNOMIAL = 0x8408
+# Messages from aircraft start their text with a 4 character message number and a 6 character flight number.
+ACARS_NUMBER_LENGTH = 4
+ACARS_FLIGHT_LENGTH = 6
 # The dongle delivers audio in bursts. Hold some back to keep the sound card fed between bursts.
 PREFILL_FRAMES = AUDIO_RATE // 4
 MAX_BUFFER_FRAMES = AUDIO_RATE
@@ -128,7 +161,7 @@ SCAN_LOW_OFFSET = 100000
 SCAN_HIGH_OFFSET = 600000
 
 KEY_POLL_SECONDS = 0.02
-HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "m: mute", "i: show/hide signal", "d: next HD channel", "D: previous HD channel", "c: cast to Sonos or AirPlay", "h: help", "Ctrl+C: quit")
+HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "m: mute", "i: show/hide signal", "d: next HD channel", "D: previous HD channel", "a: ACARS on/off", "c: cast to Sonos or AirPlay", "h: help", "Ctrl+C: quit")
 HELP_KEYS_PER_LINE = 3
 CAST_KINDS = ("sonos", "airplay")
 HELP_TEXT = "\n".join(", ".join(HELP_KEYS[i:i + HELP_KEYS_PER_LINE]) for i in range(0, len(HELP_KEYS), HELP_KEYS_PER_LINE))
@@ -160,6 +193,8 @@ class Band:
 	alerts: bool = False
 	# FM stations can send HD Radio (NRSC-5) channels beside the analog signal.
 	hd: bool = False
+	# Channels decoded as ACARS at once instead of played. The capture centers between the lowest and highest.
+	acars_channels: tuple = ()
 
 	def format(self, freq_mhz):
 		return f"{freq_mhz * 1000:.0f} kHz" if self.khz else f"{freq_mhz:.{self.digits}f} MHz"
@@ -168,6 +203,11 @@ class Band:
 	def half_width(self):
 		"""Half the width of the frequency range measured for one channel."""
 		return self.narrow_cutoff or self.step_mhz * 1e6 / 2
+
+	@property
+	def acars_center(self):
+		"""The capture center in Hz for the ACARS channels."""
+		return round((self.min_mhz + self.max_mhz) / 2 * 1e6)
 
 
 FM = Band(min_mhz=87.5, max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6, hd=True)
@@ -180,6 +220,10 @@ AIR = Band(min_mhz=118.0, max_mhz=136.975, step_mhz=0.025, digits=3, max_deviati
 FM_EU = replace(FM, deemphasis_tau=50e-6)
 AM_EU = replace(AM, min_mhz=0.531, max_mhz=1.602, step_mhz=0.009)
 REGIONS = {"us": (AM, SW, FM, AIR, NOAA), "eu": (AM_EU, SW, FM_EU, AIR)}
+# Only channels that fit in one SDR_RATE capture. The US also uses 129.125 and 130.025 MHz.
+ACARS = replace(AIR, min_mhz=130.425, max_mhz=131.55, acars_channels=(130.425, 130.45, 131.125, 131.55))
+ACARS_EU = replace(AIR, min_mhz=131.525, max_mhz=131.825, acars_channels=(131.525, 131.725, 131.825))
+ACARS_BANDS = {"us": ACARS, "eu": ACARS_EU}
 EUROPE_COUNTRIES = {"AD", "AL", "AT", "BA", "BE", "BG", "BY", "CH", "CY", "CZ", "DE", "DK", "EE", "ES", "FI", "FO", "FR", "GB", "GI", "GR", "HR", "HU", "IE", "IM", "IS", "IT", "LI", "LT", "LU", "LV", "MC", "MD", "ME", "MK", "MT", "NL", "NO", "PL", "PT", "RO", "RS", "RU", "SE", "SI", "SK", "SM", "UA", "VA", "XK"}
 GEO_NAME_LENGTH = 16
 
@@ -396,6 +440,174 @@ class AlertDecoder:
 			self.new.append(Alert("Warning alarm tone", issued=now, expires=now + timedelta(minutes=ALARM_SHOW_MINUTES)))
 
 
+def acars_crc(data):
+	"""Returns the CRC-16 (KERMIT) of data. It is 0 over a block followed by its two CRC bytes."""
+	crc = 0
+	for byte in data:
+		crc ^= byte
+		for _ in range(8):
+			crc = (crc >> 1) ^ (ACARS_CRC_POLYNOMIAL if crc & 1 else 0)
+	return crc
+
+
+def odd_parity(byte):
+	return bin(byte).count("1") % 2 == 1
+
+
+@dataclass
+class AcarsMessage:
+	freq_mhz: float
+	mode: str
+	registration: str
+	label: str
+	block_id: str
+	text: str
+	flight: str = ""
+	number: str = ""
+	time: datetime = None
+
+	def describe(self):
+		parts = [self.time.astimezone().strftime("%H:%M"), f"{self.freq_mhz:.3f}", self.flight, self.registration]
+		return " ".join(part for part in parts if part) + ": " + " ".join(self.text.split())
+
+
+def parse_acars(freq_mhz, block):
+	"""Returns the AcarsMessage in block, the bytes from the mode to ETX or ETB with parity removed."""
+	text = block[1:].decode("ascii")
+	mode, registration, label, block_id, start = chr(block[0]), text[:7], text[8:10], text[10], text[11]
+	# Aircraft send DEL as the second label character of a link test, shown as "d".
+	label = label.replace(chr(ACARS_DEL), "d")
+	body = text[12:-1] if start == chr(ACARS_STX) else ""
+	message = AcarsMessage(freq_mhz, mode, registration.replace(".", ""), label, block_id, body, time=datetime.now(timezone.utc))
+	if body and block_id.isdigit():
+		number_end = ACARS_NUMBER_LENGTH
+		flight_end = number_end + ACARS_FLIGHT_LENGTH
+		message.number, message.flight, message.text = body[:number_end], body[number_end:flight_end].strip(), body[flight_end:]
+	return message
+
+
+class AcarsDecoder:
+	"""Decodes ACARS messages on one channel from raw IQ samples at SDR_RATE. offset is the channel's distance in Hz from the capture center.
+
+	The MSK demodulator follows acarsdec's: it mixes the AM audio down from 1800 Hz, and one loop keeps the mixer and the bit clock locked to the signal."""
+
+	def __init__(self, freq_mhz, offset):
+		self.freq_mhz = freq_mhz
+		self.offset = offset
+		self.sample_index = 0
+		self.mixer = np.exp(-2j * np.pi * offset * np.arange(BLOCK_SIZE) / SDR_RATE)
+		self.channel_taps = fir_taps(ACARS_TAPS, 0, ACARS_CUTOFF, ACARS_CHANNEL_RATE)
+		self.channel_state = np.zeros(ACARS_TAPS - 1, dtype=complex)
+		self.audio_index = 0
+		count = ACARS_FILTER_LENGTH * ACARS_OVERSAMPLING + 1
+		# A half cosine, the shape of one MSK bit.
+		shape = np.maximum(np.cos(2 * np.pi * 600 / ACARS_RATE / ACARS_OVERSAMPLING * (np.arange(count) - (count - 1) / 2)), 0)
+		self.matched = [shape[start::ACARS_OVERSAMPLING][:ACARS_FILTER_LENGTH] for start in range(ACARS_OVERSAMPLING + 1)]
+		self.history = np.zeros(ACARS_FILTER_LENGTH - 1, dtype=complex)
+		self.clock = 0.0
+		self.drift_phase = 0.0
+		self.symbol = 0
+		self.register = 0
+		self.new = []
+		self.reset()
+
+	def reset(self):
+		self.state = "sync"
+		self.drift = 0.0
+		self.bits_left = 1
+		self.block = bytearray()
+
+	def process(self, samples):
+		# The mixer repeats every second, so the index stays small.
+		start = cmath.exp(-2j * np.pi * self.offset * self.sample_index / SDR_RATE)
+		self.sample_index = (self.sample_index + len(samples)) % SDR_RATE
+		channel = (samples * self.mixer[:len(samples)] * start).reshape(-1, ACARS_CHANNEL_DECIMATION).mean(axis=1)
+		channel, self.channel_state = fir_filter(self.channel_taps, channel, self.channel_state)
+		envelope = np.abs(channel[::ACARS_DECIMATION])
+		self.demodulate(envelope - envelope.mean())
+
+	def demodulate(self, audio):
+		n = self.audio_index + np.arange(len(audio))
+		self.audio_index = (self.audio_index + len(audio)) % ACARS_RATE
+		mixed = np.concatenate((self.history, audio * np.exp(-1j * ACARS_TONE_STEP * n)))
+		self.history = mixed[len(mixed) - len(self.history):]
+		position = len(self.history) - 1
+		end = len(mixed) - 1
+		while True:
+			step = ACARS_TONE_STEP + self.drift
+			wait = max(1, math.ceil((ACARS_BIT_PHASE - step / 2 - self.clock) / step))
+			if position + wait > end:
+				wait = end - position
+				self.clock += wait * step
+				self.drift_phase += wait * self.drift
+				return
+			position += wait
+			self.clock += wait * step - ACARS_BIT_PHASE
+			self.drift_phase += wait * self.drift
+			offset = min(ACARS_OVERSAMPLING, int(ACARS_OVERSAMPLING * (self.clock / step + 0.5)))
+			window = mixed[position - ACARS_FILTER_LENGTH + 1:position + 1]
+			value = np.dot(self.matched[offset], window) * cmath.exp(-1j * self.drift_phase)
+			value /= abs(value) + 1e-8
+			# MSK sends bits on the real and imaginary axes in turn, with the sign flipping every two bits.
+			if self.symbol & 1:
+				bit = value.imag
+				error = -value.real if bit >= 0 else value.real
+			else:
+				bit = value.real
+				error = value.imag if bit >= 0 else -value.imag
+			self.receive_bit((-bit if self.symbol & 2 else bit) > 0)
+			self.symbol = (self.symbol + 1) & 3
+			self.drift = ACARS_PLL_SMOOTHING * self.drift + (1 - ACARS_PLL_SMOOTHING) * ACARS_PLL_GAIN * error
+
+	def receive_bit(self, bit):
+		# Bytes arrive least significant bit first.
+		self.register = (self.register >> 1) | (0x80 if bit else 0)
+		self.bits_left -= 1
+		if self.bits_left <= 0:
+			self.bits_left = 8
+			self.receive_byte(self.register)
+
+	def receive_byte(self, byte):
+		if self.state in ("sync", "sync2"):
+			if byte == ACARS_SYN ^ 0xFF:
+				# The bits came out inverted, which a MSK receiver cannot tell apart on its own.
+				self.symbol ^= 2
+				byte = ACARS_SYN
+			if byte == ACARS_SYN:
+				self.state = "soh" if self.state == "sync2" else "sync2"
+			elif self.state == "sync":
+				self.bits_left = 1
+			else:
+				self.reset()
+		elif self.state == "soh":
+			if byte == ACARS_SOH:
+				self.state = "text"
+				self.block = bytearray()
+			else:
+				self.reset()
+		elif self.state == "text":
+			if not odd_parity(byte) or len(self.block) >= ACARS_MAX_LENGTH:
+				self.reset()
+				return
+			self.block.append(byte)
+			if byte in (ACARS_ETX, ACARS_ETB):
+				self.state = "crc"
+				self.crc = bytearray()
+		elif self.state == "crc":
+			self.crc.append(byte)
+			if len(self.crc) == 2:
+				self.finish()
+				self.state = "end"
+		else:
+			# Skips the DEL that ends each block.
+			self.reset()
+
+	def finish(self):
+		if len(self.block) < ACARS_HEADER_LENGTH or acars_crc(self.block + self.crc):
+			return
+		self.new.append(parse_acars(self.freq_mhz, bytes(byte & 0x7F for byte in self.block)))
+
+
 class RdsDecoder:
 	"""Decodes the station name and radio text from the RDS signal of one FM station."""
 
@@ -551,8 +763,13 @@ class Demodulator:
 		self.signal_db = 0.0
 		self.rds = RdsDecoder()
 		self.alerts = AlertDecoder()
+		self.acars = [AcarsDecoder(freq_mhz, round(freq_mhz * 1e6) - band.acars_center) for freq_mhz in band.acars_channels]
 
 	def process(self, samples):
+		if self.acars:
+			for decoder in self.acars:
+				decoder.process(samples)
+			return np.zeros((len(samples) // (SDR_RATE // AUDIO_RATE), 2))
 		spectrum = Spectrum(samples[:SCAN_SAMPLES])
 		here = spectrum.channel_powers(TUNE_OFFSET, self.band)[0]
 		self.signal_db += SIGNAL_SMOOTHING * (10 * np.log10(here / spectrum.floor) - self.signal_db)
@@ -731,7 +948,9 @@ class Receiver:
 	Call start() to begin playing and stop() when done. on_status_change, if set, is called with no arguments from a background thread when stereo, signal_db, rds_name, rds_text, or the HD state changes."""
 
 	def __init__(self, device_index, freq_mhz, region=None):
-		self.bands = REGIONS[region or detect_region()]
+		region = region or detect_region()
+		self.bands = REGIONS[region]
+		self.acars_band = ACARS_BANDS[region]
 		self.device_index = device_index
 		self.open_sdr()
 		self.sdr_lock = threading.RLock()
@@ -753,6 +972,7 @@ class Receiver:
 		self.county = None
 		self.alert = None
 		self.on_alert = None
+		self.on_acars = None
 		self.on_status_change = None
 		self.error = None
 		self.hd = None
@@ -903,6 +1123,21 @@ class Receiver:
 			pcm = np.frombuffer(event.data, dtype=np.int16).reshape(-1, 2)
 			self.buffer.put(self.hd_resampler.process(pcm / PCM_SCALE))
 
+	@property
+	def acars_active(self):
+		"""True from acars_start() until acars_stop(), tune(), or seek()."""
+		return bool(self.band.acars_channels)
+
+	def acars_start(self):
+		"""Decodes ACARS on all of the region's ACARS channels at once, with no sound. on_acars, if set, is called with each AcarsMessage from a background thread."""
+		self.retune(self.acars_band, self.freq_mhz, self.acars_band.acars_center)
+		self.notify_status()
+
+	def acars_stop(self):
+		"""Plays the frequency tuned before acars_start() again."""
+		self.tune(self.freq_mhz)
+		self.notify_status()
+
 	def start(self):
 		for thread in self.threads:
 			thread.start()
@@ -912,7 +1147,9 @@ class Receiver:
 		if band is None:
 			raise ValueError(f"{freq_mhz} MHz is not in a supported band")
 		freq_mhz = round(freq_mhz, 3)
-		center_freq = round(freq_mhz * 1e6) - TUNE_OFFSET
+		self.retune(band, freq_mhz, round(freq_mhz * 1e6) - TUNE_OFFSET)
+
+	def retune(self, band, freq_mhz, center_freq):
 		with self.sdr_lock:
 			if self.hd:
 				self.close_hd()
@@ -986,6 +1223,11 @@ class Receiver:
 					self.alert = alert
 					if self.on_alert:
 						self.on_alert(alert)
+			for decoder in self.demodulator.acars:
+				messages, decoder.new = decoder.new, []
+				for message in messages:
+					if self.on_acars:
+						self.on_acars(message)
 			status = (self.demodulator.stereo, self.demodulator.rds.name, self.demodulator.rds.text)
 			signal_db = self.demodulator.signal_db
 			if status != (self.stereo, self.rds_name, self.rds_text) or abs(signal_db - self.signal_db) >= SIGNAL_HYSTERESIS_DB:
@@ -1021,7 +1263,7 @@ class Receiver:
 		"""Tunes to the next station up (direction 1) or down (direction -1) in the current band, wrapping at the band edges.
 
 		Blocks while scanning. Returns the new frequency, or None if no other station was found."""
-		band = self.band
+		band = band_for(self.freq_mhz, self.bands)
 		count = round((band.max_mhz - band.min_mhz) / band.step_mhz) + 1
 		start = round((self.freq_mhz - band.min_mhz) / band.step_mhz)
 		channels = (round(band.min_mhz + (start + direction * i) % count * band.step_mhz, 3) for i in range(1, count))
@@ -1136,6 +1378,8 @@ class RadioCLI:
 		self.receiver = receiver
 		self.receiver.on_status_change = self.show_status
 		self.receiver.on_alert = self.announce_alert
+		self.receiver.on_acars = self.announce_acars
+		self.acars_count = 0
 		self.alert_mode = alert_mode
 		self.waiting_for_alert = alert_mode
 		if alert_mode:
@@ -1159,6 +1403,22 @@ class RadioCLI:
 			if self.caster:
 				self.caster.paused = False
 		self.show_message(alert.describe())
+
+	def announce_acars(self, message):
+		if message.text.strip():
+			self.acars_count += 1
+			self.show_message(message.describe())
+
+	def toggle_acars(self):
+		receiver = self.receiver
+		if receiver.acars_active:
+			receiver.acars_stop()
+			return
+		self.announce_leaving_hd()
+		self.acars_count = 0
+		receiver.acars_start()
+		channels = ", ".join(f"{freq_mhz:.3f}" for freq_mhz in receiver.band.acars_channels)
+		self.show_message(f"Decoding ACARS on {channels} MHz. No sound plays.")
 
 	def cast_targets(self, kinds):
 		"""Returns (label, names, make caster) for each Sonos group and AirPlay device found, sorted so the same room sits together.
@@ -1246,6 +1506,9 @@ class RadioCLI:
 			signal = f"MER {mer[0]:.1f}/{mer[1]:.1f} dB" if self.show_signal and mer else ""
 			name = receiver.hd_programs.get(program) or name
 			lost = program is not None and not receiver.hd_locked
+		if receiver.acars_active:
+			frequency = f"ACARS {receiver.band.min_mhz:.3f} to {receiver.band.max_mhz:.3f} MHz"
+			signal = f"Messages: {self.acars_count}"
 		parts = [frequency, signal, name]
 		if lost:
 			parts.append("HD signal lost")
@@ -1308,8 +1571,9 @@ class RadioCLI:
 			self.show_message("No other station found.")
 
 	def step(self, direction):
-		freq_mhz = self.receiver.freq_mhz + direction * self.receiver.band.step_mhz
-		if band_for(freq_mhz, self.receiver.bands) is self.receiver.band:
+		band = band_for(self.receiver.freq_mhz, self.receiver.bands)
+		freq_mhz = self.receiver.freq_mhz + direction * band.step_mhz
+		if band_for(freq_mhz, self.receiver.bands) is band:
 			self.announce_leaving_hd()
 			self.receiver.tune(freq_mhz)
 
@@ -1385,6 +1649,9 @@ class RadioCLI:
 			return
 		elif key == "m":
 			output.muted = not output.muted
+		elif key == "a":
+			self.toggle_acars()
+			return
 		elif key == "c":
 			if self.caster:
 				self.stop_cast()
@@ -1439,6 +1706,7 @@ def main():
 	parser.add_argument("--region", choices=REGIONS, help="Band plan to use. Default is from the system's country setting.")
 	parser.add_argument("--county", help="Only report weather alerts for this 5 or 6 digit county FIPS code.")
 	parser.add_argument("--alert-mode", action="store_true", help="Keep the sound off until a weather alert arrives. Needs a NOAA frequency.")
+	parser.add_argument("--acars", action="store_true", help="Start by decoding ACARS messages from aircraft. The a key goes back to the frequency.")
 	cast = parser.add_mutually_exclusive_group()
 	cast.add_argument("--sonos", nargs="?", const="", metavar="SPEAKER", help="Cast to the Sonos group with this speaker in it. Without a name, choose from a list.")
 	cast.add_argument("--airplay", nargs="?", const="", metavar="DEVICE", help="Cast to this AirPlay device. Without a name, choose from a list.")
@@ -1454,6 +1722,8 @@ def main():
 		parser.error("county must be a 5 or 6 digit FIPS code")
 	if args.alert_mode and not band.alerts:
 		parser.error("--alert-mode needs a NOAA weather radio frequency")
+	if args.alert_mode and args.acars:
+		parser.error("--alert-mode cannot be used with --acars")
 	devices = list_devices()
 	if not devices:
 		print("error: No RTL-SDR devices found.")
@@ -1463,6 +1733,8 @@ def main():
 		return 0
 	receiver = Receiver(device.index, args.frequency, region)
 	receiver.county = args.county
+	if args.acars:
+		receiver.acars_start()
 	RadioCLI(receiver, args.alert_mode, args.sonos, args.airplay).run()
 	if receiver.error:
 		print(f"error: {receiver.error}")
