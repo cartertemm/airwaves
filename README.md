@@ -6,6 +6,26 @@ This repository contains commands for digitally receiving and getting informatio
 
 The primary application is `sdr`, a radio receiver that plays AM, shortwave, FM, aviation, and NOAA weather radio from an RTL-SDR USB dongle. The other commands find nearby stations and their stream URLs through online services such as TuneIn and Broadcastify.
 
+## Setting up Your RTLSDR
+
+Before `sdr` can use the dongle, the computer needs the right USB driver for it. You only do this once per computer. For more help, see the [RTL-SDR quick start guide](https://www.rtl-sdr.com/rtl-sdr-quick-start-guide/).
+
+### Windows
+
+Windows does not include a driver that works with the dongle, so install the WinUSB driver with Zadig:
+
+1. Plug in the dongle.
+1. Download Zadig from [zadig.akeo.ie](https://zadig.akeo.ie/) and open it.
+1. Press Alt to go to the menu, right arrow over to **Options**, and down arrow to **List All Devices**. If you do not see the dongle in the next step, also clear **Options > Ignore Hubs or Composite Parents**.
+1. In the device list, select **Bulk-In, Interface (Interface 0)**. Some dongles show as **RTL2832U**, **RTL2832UHIDIR**, or **Blog V4** instead. Make sure the USB ID next to the list shows `0BDA 2838 00`. If you are using a screen reader, you may need to use object navigation (NVDA) or the JAWS cursor (JAWS) to reach the device list.
+
+	**Warning:** Do not select any other device. Zadig replaces the driver of the device you select, so a wrong choice can stop your keyboard, mouse, or another device from working.
+
+1. Make sure the box to the right of the selected device shows **WinUSB**.
+1. Click **Replace Driver**. If Windows warns about the publisher, click **Install this driver software anyway**.
+
+When Zadig finishes, the dongle is ready to use with `sdr`.
+
 ## Installing
 
 The commands need Python 3.10 or later and [uv](https://docs.astral.sh/uv/). In this folder, run:
