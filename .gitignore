@@ -53,3 +53,6 @@ ENV/
 .idea/
 .DS_Store
 Thumbs.db
+
+# ACARS flight logs
+flights.log
