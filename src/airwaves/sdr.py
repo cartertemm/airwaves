@@ -1,8 +1,10 @@
 import argparse
 import collections
+import contextlib
 import ctypes
 import locale
 import logging
+import os
 import queue
 import re
 import shutil
@@ -689,6 +691,29 @@ class Device:
 	serial: str
 
 
+@contextlib.contextmanager
+def quiet_driver():
+	"""Hides what librtlsdr prints while it opens and tunes the dongle, such as "Found Rafael Micro R820T tuner".
+
+	Both copies of librtlsdr (pyrtlsdrlib's and the one inside libnrsc5) print to the stderr of msvcrt.dll, which Python does not use, so Python's own errors still show."""
+	if sys.platform != "win32":
+		yield
+		return
+	crt = ctypes.cdll.msvcrt
+	# stderr is buffered when it is not a console, so flush around the switch.
+	crt.fflush(None)
+	saved = crt._dup(2)
+	discard = crt._open(b"NUL", os.O_WRONLY)
+	crt._dup2(discard, 2)
+	crt._close(discard)
+	try:
+		yield
+	finally:
+		crt.fflush(None)
+		crt._dup2(saved, 2)
+		crt._close(saved)
+
+
 def list_devices():
 	"""Returns the connected RTL-SDR dongles."""
 	count = librtlsdr.rtlsdr_get_device_count()
@@ -795,12 +820,13 @@ class Receiver:
 			self.rds_name = self.rds_text = ""
 			opened = False
 			try:
-				radio.open(self.device_index)
-				opened = True
-				self.hd = radio
-				radio.set_auto_gain(True)
-				radio.set_frequency(self.freq_mhz * 1e6)
-				radio.start()
+				with quiet_driver():
+					radio.open(self.device_index)
+					opened = True
+					self.hd = radio
+					radio.set_auto_gain(True)
+					radio.set_frequency(self.freq_mhz * 1e6)
+					radio.start()
 			except nrsc5.NRSC5Error:
 				if self.hd:
 					self.close_hd()
@@ -892,7 +918,8 @@ class Receiver:
 				self.close_hd()
 			if self.sdr is None:
 				try:
-					self.open_sdr()
+					with quiet_driver():
+						self.open_sdr()
 				except Exception as error:
 					self.error = error
 					self.running = False
@@ -1268,10 +1295,12 @@ class RadioCLI:
 		if band_for(freq_mhz, self.receiver.bands) is None:
 			self.show_message("error: Frequency not in range.")
 			return
+		self.announce_leaving_hd()
 		self.receiver.tune(freq_mhz)
 		self.show_status()
 
 	def seek(self, direction):
+		self.announce_leaving_hd()
 		with self.display_lock:
 			sys.stdout.write("\r" + "Scanning...".ljust(60))
 			sys.stdout.flush()
@@ -1281,7 +1310,12 @@ class RadioCLI:
 	def step(self, direction):
 		freq_mhz = self.receiver.freq_mhz + direction * self.receiver.band.step_mhz
 		if band_for(freq_mhz, self.receiver.bands) is self.receiver.band:
+			self.announce_leaving_hd()
 			self.receiver.tune(freq_mhz)
+
+	def announce_leaving_hd(self):
+		if self.receiver.hd_active:
+			self.show_message("Switching back to analog...")
 
 	def step_hd(self, direction):
 		"""Moves through analog, HD1, HD2, and so on: forward for direction 1, back for -1."""
@@ -1294,8 +1328,8 @@ class RadioCLI:
 			return
 		program = receiver.hd_program_step(direction)
 		if program is None:
+			self.show_message("Switching back to analog...")
 			receiver.hd_stop()
-			self.show_message("Analog")
 			return
 		receiver.select_hd_program(program)
 		self.show_message(f"HD{program + 1} {receiver.hd_programs.get(program, '')}".strip())
