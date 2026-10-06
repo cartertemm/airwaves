@@ -19,7 +19,7 @@ LABELS = {
 	"B4": "departure clearance confirmed", "B5": "position report", "B6": "ADS report", "B8": "departure slot request",
 	"B9": "ATIS request", "BA": "air traffic control message", "C0": "message for the cockpit printer",
 	"C1": "message for the cockpit printer", "F3": "radio advisory", "H1": "message", "H2": "weather report", "HX": "message",
-	"Q0": "link test", "Q1": "departure and arrival report", "Q2": "ETA report", "Q3": "clock update", "Q4": "voice channel busy",
+	"15": "position report", "Q0": "link test", "Q1": "departure and arrival report", "Q2": "ETA report", "Q3": "clock update", "Q4": "voice channel busy",
 	"Q5": "message not processed", "Q6": "change from voice to ACARS", "Q7": "delay report", "QA": "left the gate (OUT), fuel report",
 	"QB": "took off (OFF)", "QC": "landed (ON)", "QD": "reached the gate (IN), fuel report", "QE": "left the gate (OUT), destination",
 	"QF": "took off (OFF), destination", "QG": "left the gate and returned", "QH": "left the gate (OUT)", "QK": "landed",
@@ -31,8 +31,21 @@ LABELS = {
 TYPE_WORDS = {"POSRPT": "position report", "POS RPT": "position report"}
 TYPE_WORD = re.compile(r"\b(" + "|".join(TYPE_WORDS) + r")\b")
 AIRPORT_PAIR = re.compile(r"\b([A-Z]{4})/([A-Z]{4})\b")
+AIRPORT = re.compile(r"\b[A-Z]{4}\b")
+# Label 15 text starts with "(2" and ends with "(Z".
+FRAME = re.compile(r"^\(2|\(Z$")
+# Flight management computer messages start with "#M1B" and end with a 4 character checksum.
+FMS_TYPES = {"PRG": "progress report"}
+FMS = re.compile(r"#\w{2}B(" + "|".join(FMS_TYPES) + r")?")
+FMS_CHECKSUM_LENGTH = 4
+FMS_SKIPPED = re.compile(r"/(?:TS|FN)[^/]*")
+# Destination, runway, fuel, ETA (HHMMSS), and fuel left at arrival.
+DESTINATION = re.compile(r"/DT([A-Z]{4}),R?(\w*),(\d*),(\d{4})\d{2},(\d*)")
+# Out, off, on, or in event, date (DDMMYY), and time (HHMM).
+EVENT = re.compile(r"(?<![A-Z])(OUT|OFF|ON|IN)\d{6}(\d{4})")
+EVENTS = {"OUT": "left the gate", "OFF": "took off", "ON": "landed", "IN": "reached the gate"}
 # Degrees and minutes to a tenth (N33080W111591), or decimal degrees (N33.133 W111.985).
-POSITION = re.compile(r"(?:/POS\s*)?([NS])\s?(\d{2})(\d{2})(\d)\s?,?\s?([EW])\s?(\d{3})(\d{2})(\d)\b")
+POSITION = re.compile(r"(?:/POS\s*)?([NS])\s?(\d{2})(\d{2})(\d)\s?,?\s?([EW])\s?(\d{3})(\d{2})(\d)(?!\d)")
 DECIMAL_POSITION = re.compile(r"(?:/POS\s*)?([NS])\s?(\d{1,2}\.\d+)\s?,?\s?([EW])\s?(\d{1,3}\.\d+)")
 FIELD = re.compile(r"/(ALT|MCH|FOB|ETA)\s*([+-]?\d+)")
 FLIGHT = re.compile(r"([A-Z0-9]{2})0*(\d+[A-Z]?)")
@@ -111,18 +124,40 @@ def utc_to_local(hhmm):
 
 def describe(message):
 	"""Returns message as one readable line. Text it cannot read follows " | "."""
-	text = message.text
+	text = FRAME.sub(" ", message.text.strip())
 	parts = []
 	label_type = LABELS.get(message.label)
+	fms = FMS.match(text)
+	if fms:
+		label_type = FMS_TYPES.get(fms.group(1), label_type)
+		text = FMS_SKIPPED.sub(" ", text[fms.end():-FMS_CHECKSUM_LENGTH])
 	type_word = TYPE_WORD.search(text)
 	if type_word:
 		text = text[:type_word.start()] + " " + text[type_word.end():]
-	parts.append(TYPE_WORDS[type_word.group(1)] if type_word else label_type or f"label {message.label} message")
+	kind = TYPE_WORDS[type_word.group(1)] if type_word else label_type or f"label {message.label} message"
+	if kind == "weather request":
+		codes = [code for code in AIRPORT.findall(text) if code in airports()]
+		if codes:
+			kind += " for " + ", ".join(airport_name(airports()[code]) for code in codes)
+			text = AIRPORT.sub(lambda match: " " if match.group(0) in airports() else match.group(0), text)
+	parts.append(kind)
+	event = EVENT.search(text)
+	if event:
+		event_time = utc_to_local(event.group(2))
+		if event_time:
+			parts.append(f"{EVENTS[event.group(1)]} at {event_time}")
+			text = text[:event.start()] + " " + text[event.end():]
 	route = ""
 	pair = AIRPORT_PAIR.search(text)
 	if pair and pair.group(1) in airports() and pair.group(2) in airports():
 		route = f" from {airport_name(airports()[pair.group(1)])} to {airport_name(airports()[pair.group(2)])}"
 		text = text[:pair.start()] + " " + text[pair.end():]
+	destination = DESTINATION.search(text)
+	if destination:
+		airport, runway, fuel, destination_eta, fuel_left = destination.groups()
+		if not route:
+			route = f" to {airport_name(airports()[airport])}" if airport in airports() else f" to {airport}"
+		text = text[:destination.start()] + " " + text[destination.end():]
 	fields = {}
 	for match in FIELD.finditer(text):
 		fields.setdefault(match.group(1), match.group(2))
@@ -142,6 +177,16 @@ def describe(message):
 		parts.append(f"fuel {int(fields['FOB'])}")
 	if eta:
 		parts.append(f"ETA {eta}")
+	if destination:
+		if runway:
+			parts.append(f"runway {runway}")
+		destination_eta = utc_to_local(destination_eta)
+		if destination_eta:
+			parts.append(f"ETA {destination_eta}")
+		if fuel:
+			parts.append(f"fuel {int(fuel)}")
+		if fuel_left:
+			parts.append(f"{int(fuel_left)} fuel at arrival")
 	if message.registration:
 		text = re.sub(r"\.?\b" + re.escape(message.registration) + r"\b", " ", text)
 	number = FLIGHT.fullmatch(message.flight)
