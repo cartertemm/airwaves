@@ -19,6 +19,10 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pyaudio
+
+if sys.platform == "win32":
+	# pyrtlsdr loads the RTL-SDR Blog driver (rtlsdr.dll) from the package folder.
+	os.add_dll_directory(os.path.dirname(__file__))
 from rtlsdr import RtlSdr
 from rtlsdr.librtlsdr import librtlsdr
 
@@ -912,23 +916,26 @@ class Device:
 def quiet_driver():
 	"""Hides what librtlsdr prints while it opens and tunes the dongle.
 
-	We make librtlsdr bundled with Pyrtlsdrlib and nrsc5 print to the stderr of msvcrt.dll, which Python does not use. This causes other errors to show as expected."""
+	The RTL-SDR Blog driver prints to the stderr of msvcr100.dll and nrsc5 to that of msvcrt.dll, which Python does not use. We make only those point at NUL, so other errors show as expected."""
 	if sys.platform != "win32":
 		yield
 		return
-	crt = ctypes.cdll.msvcrt
-	# stderr is buffered when it is not a console - flush around the switch.
-	crt.fflush(None)
-	saved = crt._dup(2)
-	discard = crt._open(b"NUL", os.O_WRONLY)
-	crt._dup2(discard, 2)
-	crt._close(discard)
+	crts = [ctypes.cdll.msvcrt, ctypes.cdll.msvcr100]
+	saved = []
+	for crt in crts:
+		# stderr is buffered when it is not a console - flush around the switch.
+		crt.fflush(None)
+		saved.append(crt._dup(2))
+		discard = crt._open(b"NUL", os.O_WRONLY)
+		crt._dup2(discard, 2)
+		crt._close(discard)
 	try:
 		yield
 	finally:
-		crt.fflush(None)
-		crt._dup2(saved, 2)
-		crt._close(saved)
+		for crt, fd in zip(crts, saved):
+			crt.fflush(None)
+			crt._dup2(fd, 2)
+			crt._close(fd)
 
 
 def list_devices():
@@ -1166,7 +1173,8 @@ class Receiver:
 				if was_direct:
 					# Leaving direct sampling retunes to the current frequency, so it must be one the tuner can reach.
 					self.sdr.center_freq = center_freq
-				self.sdr.set_direct_sampling("q" if band.direct_sampling else 0)
+				with quiet_driver():
+					self.sdr.set_direct_sampling("q" if band.direct_sampling else 0)
 				# Changing mode resets the tuner, including its gain.
 				self.sdr.gain = SDR_GAIN
 			self.band = band

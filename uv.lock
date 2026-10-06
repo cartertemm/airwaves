@@ -203,7 +203,8 @@ dependencies = [
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pyaudio" },
     { name = "pyrtlsdr" },
-    { name = "pyrtlsdrlib" },
+    { name = "pyrtlsdrlib", marker = "sys_platform != 'win32'" },
+    { name = "setuptools" },
 ]
 
 [package.optional-dependencies]
@@ -224,8 +225,9 @@ requires-dist = [
     { name = "numpy" },
     { name = "pyatv", marker = "extra == 'airplay'" },
     { name = "pyaudio" },
-    { name = "pyrtlsdr" },
-    { name = "pyrtlsdrlib" },
+    { name = "pyrtlsdr", specifier = "==0.3.0" },
+    { name = "pyrtlsdrlib", marker = "sys_platform != 'win32'" },
+    { name = "setuptools", specifier = "<81" },
     { name = "soco", marker = "extra == 'sonos'" },
 ]
 provides-extras = ["sonos", "airplay"]
@@ -1792,11 +1794,11 @@ wheels = [
 
 [[package]]
 name = "pyrtlsdr"
-version = "0.5.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/d9/bf/60c6c077f52c91ab7df051b456096cb158c190dc5ea452cb6a2c9824b06f/pyrtlsdr-0.5.0.tar.gz", hash = "sha256:23d11ebd1b680b3e6a2a926b73de4ffe872cb1ffed8701f257cd1c46d1a840ac", size = 37969, upload-time = "2026-07-05T19:23:50.648Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/13/82/d74c78b7b68d2b741f3973fbc0a56c3c676d5fac055b76e61083e3fd19ba/pyrtlsdr-0.3.0.tar.gz", hash = "sha256:fb3e583ba073b861e8e0bc5e62f66f07365e9147f5d36491de4ad62f23e45362", size = 29209, upload-time = "2023-08-02T19:25:11.683Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/06/de/c1b4b02fa26a2b1fd0559f817be9833de0c77ed213139670b425e827066f/pyrtlsdr-0.5.0-py3-none-any.whl", hash = "sha256:0122da6e930d3f0593914864cf580923e3132d90aeba1f73a651a571c227f5d8", size = 31649, upload-time = "2026-07-05T19:23:49.653Z" },
+    { url = "https://files.pythonhosted.org/packages/5a/a6/618ffd03652253ddd6455a9334e56332b9d5f6afa55197710a533dd91c28/pyrtlsdr-0.3.0-py2.py3-none-any.whl", hash = "sha256:4967df42eb89e6bd70602337ae355c9b1231eb1d517fd8cc30f7b862fd1392f6", size = 26064, upload-time = "2023-08-02T19:25:09.952Z" },
 ]
 
 [[package]]
@@ -1809,8 +1811,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/08/56/2ce3f915cb445d59a2afbc647beee13690f5ad2e6216a94d8a1a846d48e8/pyrtlsdrlib-0.0.6-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:793e66da25d1897bea9c30b569a80e5a7e13f457c55e2f27461f3bc750b003cb", size = 1268443, upload-time = "2026-09-19T18:06:39.442Z" },
     { url = "https://files.pythonhosted.org/packages/67/7c/58b9e3aa363babff0d9c46bc87592f7df3256c32b361008ffdf2abfe68e1/pyrtlsdrlib-0.0.6-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:22e27322699632f3f0cf619508d85190b4ef366af193997ce014d4a041c98f9e", size = 1350999, upload-time = "2026-09-19T18:06:41.256Z" },
     { url = "https://files.pythonhosted.org/packages/b7/db/05912563fbc7bffbcf8555c5960cbb0dcbf0ee3f84111b412a48b7426e77/pyrtlsdrlib-0.0.6-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:0b0a965e73a4d6f8794ba76bdd623696136248b49cf842895f0bb485c692e9be", size = 339640, upload-time = "2026-09-19T18:06:42.967Z" },
-    { url = "https://files.pythonhosted.org/packages/13/fa/17cf3590a6413d120e7bb6d18f5e351dcd7fcfee166ba6c6fa4a88ebb30e/pyrtlsdrlib-0.0.6-py3-none-win32.whl", hash = "sha256:7f4aec49e231a8f96b10b2417bbd237107c2d1a478c25c62645178792146ecb6", size = 1310330, upload-time = "2026-09-19T18:06:44.592Z" },
-    { url = "https://files.pythonhosted.org/packages/ca/f3/56db4e49495d530cf1aa7cc01eb15e2b6dcad5784a10402bd6243bbae09a/pyrtlsdrlib-0.0.6-py3-none-win_amd64.whl", hash = "sha256:3cf62393037fa850c40117dab8118b3a00f9daa90dfa00de693440c1c16d0eb1", size = 1310332, upload-time = "2026-09-19T18:06:46.212Z" },
 ]
 
 [[package]]
@@ -1826,6 +1826,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz", hash = "sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed", size = 142856, upload-time = "2026-05-14T19:25:27.735Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl", hash = "sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0", size = 73075, upload-time = "2026-05-14T19:25:26.443Z" },
+]
+
+[[package]]
+name = "setuptools"
+version = "80.10.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/76/95/faf61eb8363f26aa7e1d762267a8d602a1b26d4f3a1e758e92cb3cb8b054/setuptools-80.10.2.tar.gz", hash = "sha256:8b0e9d10c784bf7d262c4e5ec5d4ec94127ce206e8738f29a437945fbc219b70", size = 1200343, upload-time = "2026-01-25T22:38:17.252Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/b8/f1f62a5e3c0ad2ff1d189590bfa4c46b4f3b6e49cef6f26c6ee4e575394d/setuptools-80.10.2-py3-none-any.whl", hash = "sha256:95b30ddfb717250edb492926c92b5221f7ef3fbcc2b07579bcd4a27da21d0173", size = 1064234, upload-time = "2026-01-25T22:38:15.216Z" },
 ]
 
 [[package]]

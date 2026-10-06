@@ -334,4 +334,4 @@ uv run broadcastify --stream 20973
 
 ## License
 
-GPL version 3 or later, because `sdr` includes libnrsc5. See `LICENSE`.
+GPL version 3 or later, because `sdr` includes libnrsc5. It also includes the [RTL-SDR Blog](https://github.com/rtlsdrblog/rtl-sdr-blog) dongle driver for Windows (GPL version 2 or later). See `LICENSE`.
