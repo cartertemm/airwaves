@@ -24,7 +24,7 @@ from rtlsdr.librtlsdr import librtlsdr
 
 from . import flight_log, nrsc5
 
-VERSION = "0.1"
+VERSION = "0.2"
 VERSION_TEXT = f"SDR Tuner version {VERSION}"
 VOLUME_STEP = 10
 DEFAULT_VOLUME = 50
