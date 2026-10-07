@@ -37,7 +37,7 @@ FRAME = re.compile(r"^\(2|\(Z$")
 # Flight management computer messages start with "#M1B" and end with a 4 character checksum.
 FMS_TYPES = {"PRG": "progress report"}
 FMS = re.compile(r"#\w{2}B(" + "|".join(FMS_TYPES) + r")?")
-FMS_CHECKSUM_LENGTH = 4
+FMS_CHECKSUM = re.compile(r"[0-9A-F]{4}$")
 FMS_SKIPPED = re.compile(r"/(?:TS|FN)[^/]*")
 # Destination, runway, fuel, ETA (HHMMSS), and fuel left at arrival.
 DESTINATION = re.compile(r"/DT([A-Z]{4}),R?(\w*),(\d*),(\d{4})\d{2},(\d*)")
@@ -130,7 +130,7 @@ def describe(message):
 	fms = FMS.match(text)
 	if fms:
 		label_type = FMS_TYPES.get(fms.group(1), label_type)
-		text = FMS_SKIPPED.sub(" ", text[fms.end():-FMS_CHECKSUM_LENGTH])
+		text = FMS_SKIPPED.sub(" ", FMS_CHECKSUM.sub("", text[fms.end():]))
 	type_word = TYPE_WORD.search(text)
 	if type_word:
 		text = text[:type_word.start()] + " " + text[type_word.end():]
