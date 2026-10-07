@@ -38,7 +38,7 @@ FRAME = re.compile(r"^\(2|\(Z$")
 # A or B, and often a report type. Flight management computer messages end with a 4 character checksum.
 FMS_TYPES = {
 	"PRG": "progress report", "REQPWI": "wind forecast request", "FLR": "fault report", "WRN": "warning", "TKO": "takeoff report",
-	"CRZ": "cruise report", "WOB": "weather observation", "EDA": "engine report", "ENG": "engine report",
+	"CRZ": "cruise report", "WOB": "weather observation", "EDA": "engine report", "ENG": "engine report", "POS": "position report",
 }
 SYSTEMS = {"DF": "flight data report", "CF": "maintenance report"}
 FMS = re.compile(r"#(\w{2})[AB]\*?(" + "|".join(FMS_TYPES) + r")?")
@@ -50,6 +50,9 @@ FLIGHT_PHASES = {
 	"07": "descent", "08": "landing", "09": "taxi in", "10": "after engine shutdown",
 }
 FMS_SKIPPED = re.compile(r"/(?:TS|FN)[^/]*")
+# Flight management computer position: waypoint passed and the time (HHMMSS), altitude in hundreds of feet, next waypoint and ETA,
+# the waypoint after, and temperature (M48 is -48 C).
+FMS_POSITION = re.compile(r"^\s*([NS]\d{5}[EW]\d{6}),([A-Z]{2,5}),(\d{6}),(\d+),([A-Z]{2,5}),(\d{6}),([A-Z]*),([MP])(\d+)")
 # Destination, runway, fuel, ETA (HHMMSS), and fuel left at arrival.
 DESTINATION = re.compile(r"/DT([A-Z]{4}),R?(\w*),(\d*),(\d{4})\d{2},(\d*)")
 # Out, off, on, or in event, date (DDMMYY), and time (HHMM).
@@ -154,6 +157,9 @@ def describe(message):
 	if report:
 		kind = "position report"
 		text = text[report.end():]
+	waypoints = FMS_POSITION.match(text) if fms and fms.group(2) == "POS" else None
+	if waypoints:
+		text = waypoints.group(1) + " " + text[waypoints.end():]
 	fault = FAULT.match(text.strip()) if kind == "fault report" else None
 	if fault:
 		fault_time, phase, problem, sources = fault.groups()
@@ -194,6 +200,8 @@ def describe(message):
 	if report:
 		altitude = f"{int(report.group(2)):,} ft"
 		eta = utc_to_local(report.group(3))
+	if waypoints:
+		altitude = f"{int(waypoints.group(4)) * 100:,} ft"
 	understood = {"ALT", "MCH", "FOB"} | ({"ETA"} if eta else set())
 	text = FIELD.sub(lambda match: " " if match.group(1) in understood else match.group(0), text)
 	position = find_position(text)
@@ -210,6 +218,11 @@ def describe(message):
 			parts.append(f"{int(temperature)} C")
 	elif altitude:
 		parts.append(f"at {altitude}")
+	if waypoints:
+		_, passed, passed_time, _, following, following_time, after, sign, degrees = waypoints.groups()
+		parts.append(f"{'-' if sign == 'M' else ''}{int(degrees)} C")
+		parts.append(f"over {passed} at {utc_to_local(passed_time[:4])}")
+		parts.append(f"next {following} at {utc_to_local(following_time[:4])}" + (f", then {after}" if after else ""))
 	if report:
 		parts.append(f"heading {int(report.group(4))}")
 	if "MCH" in fields:
