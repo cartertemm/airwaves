@@ -56,7 +56,7 @@ DESTINATION = re.compile(r"/DT([A-Z]{4}),R?(\w*),(\d*),(\d{4})\d{2},(\d*)")
 EVENT = re.compile(r"(?<![A-Z])(OUT|OFF|ON|IN)\d{6}(\d{4})")
 EVENTS = {"OUT": "left the gate", "OFF": "took off", "ON": "landed", "IN": "reached the gate"}
 # Degrees and minutes to a tenth (N33080W111591), or decimal degrees (N33.133 W111.985).
-POSITION = re.compile(r"(?:/POS\s*)?([NS])\s?(\d{2})(\d{2})(\d)\s?,?\s?([EW])\s?(\d{3})(\d{2})(\d)")
+POSITION = re.compile(r"(?:/POS\s*)?([NS])\s?(\d{2})(\d{2})(\d)\s?,?\s?([EW])([ \d]\d{2})(\d{2})(\d)")
 DECIMAL_POSITION = re.compile(r"(?:/POS\s*)?([NS])\s?(\d{1,2}\.\d+)\s?,?\s?([EW])\s?(\d{1,3}\.\d+)")
 FIELD = re.compile(r"/(ALT|MCH|FOB|ETA)\s*([+-]?\d+)")
 # Label 16 position reports: time (HHMMSS), altitude in feet, ETA (HHMM), heading, then the position.
