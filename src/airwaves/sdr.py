@@ -1231,7 +1231,7 @@ class Receiver:
 			except queue.Empty:
 				continue
 			sdr = self.sdr
-			if sdr is None:
+			if sdr is None or tune_count != self.tune_count:
 				self.raw_blocks.task_done()
 				continue
 			if self.demodulator is None or band is not self.demodulator.band:
@@ -1303,6 +1303,8 @@ class Receiver:
 				if self.sdr is None:
 					return None
 			# Fade out the current station. Wait for the block being decoded first, or it would play after the fade.
+			# A block read before the lock was taken can still be queued after join, so a new tune count makes demodulate drop it.
+			self.tune_count += 1
 			self.raw_blocks.join()
 			self.buffer.cut(FADE_FRAMES)
 			try:
