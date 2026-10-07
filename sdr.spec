@@ -5,7 +5,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 # sdr and nrsc5 load their DLLs from the airwaves folder, and the casting
 # modules are only imported when casting, so PyInstaller cannot find them alone.
-dlls = ("libnrsc5.dll", "rtlsdr.dll", "pthreadVC2.dll", "msvcr100.dll")
+dlls = ("libnrsc5.dll", "rtlsdr.dll")
 binaries = [(os.path.join(SPECPATH, "src", "airwaves", name), "airwaves") for name in dlls]
 # airportsdata reads its airport list from its own folder.
 datas = collect_data_files("airportsdata")

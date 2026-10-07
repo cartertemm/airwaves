@@ -21,10 +21,14 @@ import numpy as np
 import pyaudio
 
 if sys.platform == "win32":
-	# pyrtlsdr loads the RTL-SDR Blog driver (rtlsdr.dll) from the package folder.
+	import msvcrt
+	# pyrtlsdr loads the osmocom driver (rtlsdr.dll) from the package folder.
 	os.add_dll_directory(os.path.dirname(__file__))
+	# Python's console stderr keeps writing to this handle, even after fd 2 changes.
+	STDERR_HANDLE = ctypes.c_void_p(msvcrt.get_osfhandle(2))
 from rtlsdr import RtlSdr
 from rtlsdr.librtlsdr import librtlsdr
+from rtlsdr.rtlsdr import LibUSBError
 
 from . import flight_log, nrsc5
 
@@ -173,6 +177,7 @@ TITLE_LENGTH = 1024
 VK_MEDIA_NEXT_TRACK = 0xB0
 VK_MEDIA_PREV_TRACK = 0xB1
 WM_HOTKEY = 0x0312
+HANDLE_FLAG_PROTECT_FROM_CLOSE = 0x2
 
 
 @dataclass(frozen=True)
@@ -916,26 +921,27 @@ class Device:
 def quiet_driver():
 	"""Hides what librtlsdr prints while it opens and tunes the dongle.
 
-	The RTL-SDR Blog driver prints to the stderr of msvcr100.dll and nrsc5 to that of msvcrt.dll, which Python does not use. We make only those point at NUL, so other errors show as expected."""
+	The driver and nrsc5 print to the stderr of msvcrt.dll, which Python does not use. We make only that point at NUL, so other errors show as expected."""
 	if sys.platform != "win32":
 		yield
 		return
-	crts = [ctypes.cdll.msvcrt, ctypes.cdll.msvcr100]
-	saved = []
-	for crt in crts:
-		# stderr is buffered when it is not a console - flush around the switch.
-		crt.fflush(None)
-		saved.append(crt._dup(2))
-		discard = crt._open(b"NUL", os.O_WRONLY)
-		crt._dup2(discard, 2)
-		crt._close(discard)
+	crt = ctypes.cdll.msvcrt
+	# msvcrt.dll starts with Python's STDERR_HANDLE as its fd 2, and _dup2 closes the handle it replaces. Protected, it stays open.
+	kernel32 = ctypes.windll.kernel32
+	kernel32.SetHandleInformation(STDERR_HANDLE, HANDLE_FLAG_PROTECT_FROM_CLOSE, HANDLE_FLAG_PROTECT_FROM_CLOSE)
+	# stderr is buffered when it is not a console - flush around the switch.
+	crt.fflush(None)
+	saved = crt._dup(2)
+	discard = crt._open(b"NUL", os.O_WRONLY)
+	crt._dup2(discard, 2)
+	crt._close(discard)
 	try:
 		yield
 	finally:
-		for crt, fd in zip(crts, saved):
-			crt.fflush(None)
-			crt._dup2(fd, 2)
-			crt._close(fd)
+		crt.fflush(None)
+		crt._dup2(saved, 2)
+		crt._close(saved)
+		kernel32.SetHandleInformation(STDERR_HANDLE, HANDLE_FLAG_PROTECT_FROM_CLOSE, 0)
 
 
 def list_devices():
@@ -1169,18 +1175,31 @@ class Receiver:
 					self.running = False
 					return
 			was_direct = bool(self.band and self.band.direct_sampling)
-			if band.direct_sampling != was_direct:
-				if was_direct:
-					# Leaving direct sampling retunes to the current frequency, so it must be one the tuner can reach.
-					self.sdr.center_freq = center_freq
+			try:
 				with quiet_driver():
-					self.sdr.set_direct_sampling("q" if band.direct_sampling else 0)
-				# Changing mode resets the tuner, including its gain.
-				self.sdr.gain = SDR_GAIN
+					if band.direct_sampling != was_direct:
+						if was_direct:
+							# Leaving direct sampling retunes to the current frequency, so it must be one the tuner can reach.
+							self.sdr.center_freq = center_freq
+						self.sdr.set_direct_sampling("q" if band.direct_sampling else 0)
+						# Changing mode resets the tuner, including its gain.
+						self.sdr.gain = SDR_GAIN
+					self.sdr.center_freq = center_freq
+			except LibUSBError as error:
+				self.lose_dongle(error)
+				return
 			self.band = band
 			self.freq_mhz = freq_mhz
-			self.sdr.center_freq = center_freq
 			self.tune_count += 1
+
+	def lose_dongle(self, error):
+		"""Stops the receiver after a USB error. Call with sdr_lock held.
+
+		The driver prints a message for each USB command the dongle drops, even when the command then works, so quiet_driver hides those and only an error that reaches Python stops the receiver."""
+		self.sdr.close()
+		self.sdr = None
+		self.error = OSError(f"The dongle stopped responding. Try another USB port or computer. ({error})")
+		self.running = False
 
 	def guard(self, target):
 		try:
@@ -1286,22 +1305,27 @@ class Receiver:
 			# Fade out the current station. Wait for the block being decoded first, or it would play after the fade.
 			self.raw_blocks.join()
 			self.buffer.cut(FADE_FRAMES)
-			for freq_mhz in channels:
-				freq = round(freq_mhz * 1e6)
-				if center is None or not SCAN_LOW_OFFSET + margin <= freq - center <= SCAN_HIGH_OFFSET - margin:
-					# Place the capture so it covers as many of the channels ahead as it can, without a negative center frequency.
-					center = max(freq - (SCAN_LOW_OFFSET + margin if direction > 0 else SCAN_HIGH_OFFSET - margin), 0)
-					spectrum = self.capture(center)
-				if has_station(spectrum, freq - center, band):
-					found = freq_mhz
-					break
+			try:
+				for freq_mhz in channels:
+					freq = round(freq_mhz * 1e6)
+					if center is None or not SCAN_LOW_OFFSET + margin <= freq - center <= SCAN_HIGH_OFFSET - margin:
+						# Place the capture so it covers as many of the channels ahead as it can, without a negative center frequency.
+						center = max(freq - (SCAN_LOW_OFFSET + margin if direction > 0 else SCAN_HIGH_OFFSET - margin), 0)
+						spectrum = self.capture(center)
+					if has_station(spectrum, freq - center, band):
+						found = freq_mhz
+						break
+			except LibUSBError as error:
+				self.lose_dongle(error)
+				return None
 			# Tune before releasing the lock so that no block is read at the new frequency under the old tune count.
 			self.tune(self.freq_mhz if found is None else found)
 		return found
 
 	def capture(self, center_freq):
 		"""Tunes to center_freq and returns the spectrum around it. Call with sdr_lock held."""
-		self.sdr.center_freq = center_freq
+		with quiet_driver():
+			self.sdr.center_freq = center_freq
 		self.sdr.read_bytes(SCAN_SETTLE_BYTES)
 		return Spectrum(self.sdr.packed_bytes_to_iq(self.sdr.read_bytes(SCAN_SAMPLES * 2)))
 
@@ -1584,7 +1608,7 @@ class RadioCLI:
 		with self.display_lock:
 			sys.stdout.write("\r" + "Scanning...".ljust(60))
 			sys.stdout.flush()
-		if self.receiver.seek(direction) is None:
+		if self.receiver.seek(direction) is None and self.receiver.running:
 			self.show_message("No other station found.")
 
 	def step(self, direction):

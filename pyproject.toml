@@ -9,7 +9,7 @@ dependencies = [
 	"airportsdata",
 	"numpy",
 	"pyaudio",
-	# 0.4 and later need functions that the RTL-SDR Blog driver in the package does not have.
+	# 0.4 and later need functions that the osmocom driver in the package does not have.
 	"pyrtlsdr==0.3.0",
 	"pyrtlsdrlib; sys_platform != 'win32'",
 	# pyrtlsdr 0.3.0 imports pkg_resources, which setuptools 81 removes.
