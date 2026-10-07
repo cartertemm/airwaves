@@ -32,7 +32,7 @@ from rtlsdr.rtlsdr import LibUSBError
 
 from . import flight_log, nrsc5
 
-VERSION = "0.2"
+VERSION = "0.2.1"
 VERSION_TEXT = f"SDR Tuner version {VERSION}"
 VOLUME_STEP = 10
 DEFAULT_VOLUME = 50
