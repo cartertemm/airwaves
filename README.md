@@ -105,7 +105,7 @@ The script picks US or European band settings from the country in your system se
 uv run sdr 97.9 --region eu
 ```
 
-On weather radio, each alert prints on its own line, for example `ALERT: Tornado Warning until 3:45 PM for 004013`, and stays on the status line until it expires. The numbers are county FIPS codes. To only get alerts for your county, add `--county` with its FIPS code. To keep the sound off until an alert arrives, like a weather radio, add `--alert-mode`:
+On weather radio, each alert prints on its own line, for example `ALERT: Tornado Warning until 3:45 PM for 004013`, and stays on the status line until it expires. The numbers are county FIPS codes. To only get alerts for your county, add `--county` with its FIPS code. Alerts for the whole US always show. To keep the sound off until an alert arrives, like a weather radio, add `--alert-mode`:
 
 ```
 uv run sdr 162.55 --county 004013 --alert-mode
@@ -259,7 +259,7 @@ receiver.stop()
 | `on_status_change` | Called with no arguments when `stereo`, `signal_db`, `rds_name`, `rds_text`, or the HD state changes. It runs on a background thread. |
 | `acars_start()`, `acars_stop()`, `acars_active` | Start and stop decoding ACARS. `acars_start()` tunes to the region's ACARS channels and plays silence. `acars_stop()` goes back to `freq_mhz`, which `acars_start()` does not change. `tune()` and `seek()` also stop ACARS. |
 | `on_acars` | Called with each decoded ACARS message from a background thread, including messages without text. Each is an `sdr.AcarsMessage` with `time`, `freq_mhz`, `mode`, `registration`, `label`, `block_id`, `flight`, `number`, `text`, and `describe()`. `flight` and `number` are only set on messages from aircraft. `flight_log.describe(message)` (`from airwaves import flight_log`) returns the readable line. |
-| `county` | A county FIPS code. When set, alerts for other counties are ignored. |
+| `county` | A county FIPS code. When set, alerts for other counties are ignored. Alerts for the whole US always show. |
 | `alert`, `on_alert` | The latest weather alert, an `sdr.Alert` with `name`, `event`, `locations`, `issued`, `expires`, and `describe()`. `on_alert` is called with each new alert from a background thread. |
 | `running`, `error` | `running` becomes false if the dongle fails, and `error` holds the cause. |
 

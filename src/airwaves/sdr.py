@@ -332,7 +332,7 @@ class Alert:
 		if not county or not self.locations:
 			return True
 		state, county = county[-5:-3], county[-3:]
-		return any(location[1:3] == state and location[3:] in ("000", county) for location in self.locations)
+		return any(location == "000000" or (location[1:3] == state and location[3:] in ("000", county)) for location in self.locations)
 
 	def active(self):
 		return self.expires is None or datetime.now(timezone.utc) < self.expires
