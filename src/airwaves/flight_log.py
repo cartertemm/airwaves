@@ -32,6 +32,8 @@ TYPE_WORDS = {"POSRPT": "position report", "POS RPT": "position report"}
 TYPE_WORD = re.compile(r"\b(" + "|".join(TYPE_WORDS) + r")\b")
 AIRPORT_PAIR = re.compile(r"\b([A-Z]{4})/([A-Z]{4})\b")
 AIRPORT = re.compile(r"\b[A-Z]{4}\b")
+# "-SA" after the airports in a weather request asks for the current weather (METAR).
+METAR_SUFFIX = re.compile(r"-SA\b")
 # Label 15 text starts with "(2" and ends with "(Z".
 FRAME = re.compile(r"^\(2|\(Z$")
 # Onboard system messages start with "#", the system (M1 flight management computer, DF flight data unit, CF fault display),
@@ -172,6 +174,7 @@ def describe(message):
 		if codes:
 			kind += " for " + ", ".join(airport_name(airports()[code]) for code in codes)
 			text = AIRPORT.sub(lambda match: " " if match.group(0) in airports() else match.group(0), text)
+			text = METAR_SUFFIX.sub(" ", text)
 	parts.append(kind)
 	if fault and fault.group(4):
 		parts.append("reported by " + ", ".join(source.strip() for source in fault.group(4).split(",") if source.strip()))
