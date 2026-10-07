@@ -68,6 +68,8 @@ FIELD = re.compile(r"/(ALT|MCH|FOB|ETA)\s*([+-]?\d+)")
 LABEL_15 = re.compile(r"^(\S{3} .{2})([ \d-]{3})([ \d-]{3})$")
 # Label 16 position reports: time (HHMMSS), altitude in feet, ETA (HHMM), heading, then the position.
 LABEL_16 = re.compile(r"(\d{6}),(\d+),(\d{4}),\s*(\d{1,3}),")
+# Or the position, then the altitude in feet (N 41.481,W122.595,36014,6, 139).
+LABEL_16_ALTITUDE = re.compile(r"^\s*,(\d+),")
 FLIGHT = re.compile(r"([A-Z0-9]{2})0*(\d+[A-Z]?)")
 # Past this distance, a position shows how far it is from the closest airport.
 NEAR_KM = 50
@@ -216,6 +218,11 @@ def describe(message):
 			if hundreds.strip().isdigit():
 				altitude = f"{int(hundreds) * 100:,} ft"
 			text = unknown
+		feet = LABEL_16_ALTITUDE.match(text) if message.label == "16" and not report else None
+		if feet:
+			parts[0] = "position report"
+			altitude = f"{int(feet.group(1)):,} ft"
+			text = text[feet.end():]
 		parts.append(describe_position(lat, lon, altitude))
 		if tail and temperature.strip().lstrip("-").isdigit():
 			parts.append(f"{int(temperature)} C")
