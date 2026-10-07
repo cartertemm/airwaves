@@ -43,7 +43,7 @@ FMS_TYPES = {
 	"CRZ": "cruise report", "WOB": "weather observation", "EDA": "engine report", "ENG": "engine report", "POS": "position report",
 }
 SYSTEMS = {"DF": "flight data report", "CF": "maintenance report"}
-FMS = re.compile(r"#(\w{2})[AB]\*?(" + "|".join(FMS_TYPES) + r")?")
+FMS = re.compile(r"#(\w{2})[AB](?:\*|\.\d/)?(" + "|".join(FMS_TYPES) + r")?")
 FMS_CHECKSUM = re.compile(r"[0-9A-F]{4}$")
 # Fault reports: date (YYMMDD), time (HHMM), ATA chapter, flight phase, the fault, then "/ID" and the systems that reported it.
 FAULT = re.compile(r"^/FR\d{6}(\d{4})[\d ]{0,2}\d{6}(\d{2})(.*?)(?:/ID(.*))?$")
