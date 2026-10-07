@@ -48,6 +48,8 @@ EVENTS = {"OUT": "left the gate", "OFF": "took off", "ON": "landed", "IN": "reac
 POSITION = re.compile(r"(?:/POS\s*)?([NS])\s?(\d{2})(\d{2})(\d)\s?,?\s?([EW])\s?(\d{3})(\d{2})(\d)")
 DECIMAL_POSITION = re.compile(r"(?:/POS\s*)?([NS])\s?(\d{1,2}\.\d+)\s?,?\s?([EW])\s?(\d{1,3}\.\d+)")
 FIELD = re.compile(r"/(ALT|MCH|FOB|ETA)\s*([+-]?\d+)")
+# Label 16 position reports: time (HHMMSS), altitude in feet, ETA (HHMM), heading, then the position.
+LABEL_16 = re.compile(r"(\d{6}),(\d+),(\d{4}),\s*(\d{1,3}),")
 FLIGHT = re.compile(r"([A-Z0-9]{2})0*(\d+[A-Z]?)")
 # Past this distance, a position shows how far it is from the closest airport.
 NEAR_KM = 50
@@ -135,6 +137,10 @@ def describe(message):
 	if type_word:
 		text = text[:type_word.start()] + " " + text[type_word.end():]
 	kind = TYPE_WORDS[type_word.group(1)] if type_word else label_type or f"label {message.label} message"
+	report = LABEL_16.match(text) if message.label == "16" else None
+	if report:
+		kind = "position report"
+		text = text[report.end():]
 	if kind == "weather request":
 		codes = [code for code in AIRPORT.findall(text) if code in airports()]
 		if codes:
@@ -163,6 +169,9 @@ def describe(message):
 		fields.setdefault(match.group(1), match.group(2))
 	altitude = f"{int(fields['ALT']):,} ft" if "ALT" in fields else ""
 	eta = utc_to_local(fields["ETA"]) if "ETA" in fields else None
+	if report:
+		altitude = f"{int(report.group(2)):,} ft"
+		eta = utc_to_local(report.group(3))
 	understood = {"ALT", "MCH", "FOB"} | ({"ETA"} if eta else set())
 	text = FIELD.sub(lambda match: " " if match.group(1) in understood else match.group(0), text)
 	position = find_position(text)
@@ -171,6 +180,8 @@ def describe(message):
 		parts.append(describe_position(lat, lon, altitude))
 	elif altitude:
 		parts.append(f"at {altitude}")
+	if report:
+		parts.append(f"heading {int(report.group(4))}")
 	if "MCH" in fields:
 		parts.append(f"Mach 0.{fields['MCH'].lstrip('+')}")
 	if "FOB" in fields:
