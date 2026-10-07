@@ -59,6 +59,8 @@ EVENTS = {"OUT": "left the gate", "OFF": "took off", "ON": "landed", "IN": "reac
 POSITION = re.compile(r"(?:/POS\s*)?([NS])\s?(\d{2})(\d{2})(\d)\s?,?\s?([EW])([ \d]\d{2})(\d{2})(\d)")
 DECIMAL_POSITION = re.compile(r"(?:/POS\s*)?([NS])\s?(\d{1,2}\.\d+)\s?,?\s?([EW])\s?(\d{1,3}\.\d+)")
 FIELD = re.compile(r"/(ALT|MCH|FOB|ETA)\s*([+-]?\d+)")
+# After a label 15 position: 3 unknown characters, a space, 2 unknown, altitude in hundreds of feet, temperature in C.
+LABEL_15 = re.compile(r"^(\S{3} .{2})([ \d-]{3})([ \d-]{3})$")
 # Label 16 position reports: time (HHMMSS), altitude in feet, ETA (HHMM), heading, then the position.
 LABEL_16 = re.compile(r"(\d{6}),(\d+),(\d{4}),\s*(\d{1,3}),")
 FLIGHT = re.compile(r"([A-Z0-9]{2})0*(\d+[A-Z]?)")
@@ -197,7 +199,15 @@ def describe(message):
 	position = find_position(text)
 	if position:
 		lat, lon, text = position
+		tail = LABEL_15.match(text.strip()) if message.label == "15" else None
+		if tail:
+			unknown, hundreds, temperature = tail.groups()
+			if hundreds.strip().isdigit():
+				altitude = f"{int(hundreds) * 100:,} ft"
+			text = unknown
 		parts.append(describe_position(lat, lon, altitude))
+		if tail and temperature.strip().lstrip("-").isdigit():
+			parts.append(f"{int(temperature)} C")
 	elif altitude:
 		parts.append(f"at {altitude}")
 	if report:
