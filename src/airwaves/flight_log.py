@@ -34,10 +34,21 @@ AIRPORT_PAIR = re.compile(r"\b([A-Z]{4})/([A-Z]{4})\b")
 AIRPORT = re.compile(r"\b[A-Z]{4}\b")
 # Label 15 text starts with "(2" and ends with "(Z".
 FRAME = re.compile(r"^\(2|\(Z$")
-# Flight management computer messages start with "#M1B" and end with a 4 character checksum.
-FMS_TYPES = {"PRG": "progress report"}
-FMS = re.compile(r"#\w{2}B(" + "|".join(FMS_TYPES) + r")?")
+# Onboard system messages start with "#", the system (M1 flight management computer, DF flight data unit, CF fault display),
+# A or B, and often a report type. Flight management computer messages end with a 4 character checksum.
+FMS_TYPES = {
+	"PRG": "progress report", "REQPWI": "wind forecast request", "FLR": "fault report", "WRN": "warning", "TKO": "takeoff report",
+	"CRZ": "cruise report", "WOB": "weather observation", "EDA": "engine report", "ENG": "engine report",
+}
+SYSTEMS = {"DF": "flight data report", "CF": "maintenance report"}
+FMS = re.compile(r"#(\w{2})[AB]\*?(" + "|".join(FMS_TYPES) + r")?")
 FMS_CHECKSUM = re.compile(r"[0-9A-F]{4}$")
+# Fault reports: date (YYMMDD), time (HHMM), ATA chapter, flight phase, the fault, then "/ID" and the systems that reported it.
+FAULT = re.compile(r"^/FR\d{6}(\d{4})[\d ]{0,2}\d{6}(\d{2})(.*?)(?:/ID(.*))?$")
+FLIGHT_PHASES = {
+	"01": "before engine start", "02": "taxi out", "03": "takeoff roll", "04": "takeoff", "05": "climb", "06": "cruise",
+	"07": "descent", "08": "landing", "09": "taxi in", "10": "after engine shutdown",
+}
 FMS_SKIPPED = re.compile(r"/(?:TS|FN)[^/]*")
 # Destination, runway, fuel, ETA (HHMMSS), and fuel left at arrival.
 DESTINATION = re.compile(r"/DT([A-Z]{4}),R?(\w*),(\d*),(\d{4})\d{2},(\d*)")
@@ -131,7 +142,7 @@ def describe(message):
 	label_type = LABELS.get(message.label)
 	fms = FMS.match(text)
 	if fms:
-		label_type = FMS_TYPES.get(fms.group(1), label_type)
+		label_type = FMS_TYPES.get(fms.group(2)) or SYSTEMS.get(fms.group(1), label_type)
 		text = FMS_SKIPPED.sub(" ", FMS_CHECKSUM.sub("", text[fms.end():]))
 	type_word = TYPE_WORD.search(text)
 	if type_word:
@@ -141,12 +152,21 @@ def describe(message):
 	if report:
 		kind = "position report"
 		text = text[report.end():]
+	fault = FAULT.match(text.strip()) if kind == "fault report" else None
+	if fault:
+		fault_time, phase, problem, sources = fault.groups()
+		when = utc_to_local(fault_time)
+		kind += f" at {when}" if when else ""
+		kind += f" in {FLIGHT_PHASES.get(phase, 'flight phase ' + phase)}: {problem.strip()}"
+		text = ""
 	if kind == "weather request":
 		codes = [code for code in AIRPORT.findall(text) if code in airports()]
 		if codes:
 			kind += " for " + ", ".join(airport_name(airports()[code]) for code in codes)
 			text = AIRPORT.sub(lambda match: " " if match.group(0) in airports() else match.group(0), text)
 	parts.append(kind)
+	if fault and fault.group(4):
+		parts.append("reported by " + ", ".join(source.strip() for source in fault.group(4).split(",") if source.strip()))
 	event = EVENT.search(text)
 	if event:
 		event_time = utc_to_local(event.group(2))
