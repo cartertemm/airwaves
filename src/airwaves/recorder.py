@@ -59,20 +59,22 @@ class Recorder:
 
 	def run(self):
 		try:
-			while self.running or not self.blocks.empty():
-				try:
-					audio = self.blocks.get(timeout=QUEUE_TIMEOUT_SECONDS)
-				except queue.Empty:
-					continue
-				self.write_pcm(to_pcm(audio))
-			if self.encoder:
-				self.file.write(bytes(self.encoder.flush()))
+			try:
+				while self.running or not self.blocks.empty():
+					try:
+						audio = self.blocks.get(timeout=QUEUE_TIMEOUT_SECONDS)
+					except queue.Empty:
+						continue
+					self.write_pcm(to_pcm(audio))
+				if self.encoder:
+					self.file.write(bytes(self.encoder.flush()))
+			finally:
+				self.file.close()
 		except OSError as error:
 			self.running = False
 			if self.on_error:
 				self.on_error(error)
 		finally:
-			self.file.close()
 			self.raw.close()
 
 	def write_pcm(self, pcm):

@@ -71,3 +71,22 @@ def test_bad_folder_raises_on_open(tmp_path):
 	except OSError:
 		return
 	assert False, "expected OSError"
+
+
+def test_close_error_reports_and_closes_file(tmp_path):
+	class BrokenClose:
+		def writeframesraw(self, data):
+			pass
+
+		def close(self):
+			raise OSError("disk full")
+
+	path = str(tmp_path / "a.wav")
+	recorder = Recorder(path, RATE, mp3=False)
+	recorder.file = BrokenClose()
+	errors = []
+	recorder.on_error = errors.append
+	recorder.write(block(100))
+	recorder.close()
+	assert [str(error) for error in errors] == ["disk full"]
+	assert recorder.raw.closed
