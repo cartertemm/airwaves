@@ -1464,14 +1464,23 @@ class RadioCLI:
 			# ACARS text has no fixed format, so show the message as sent rather than lose it.
 			line = message.describe()
 		self.show_message(line)
-		for log in (self.log, self.record_log):
-			if log:
-				try:
-					log.write(f"{line}\n\t{message.describe()}\n")
-					log.flush()
-				except ValueError:
-					# The r key closed the log on the main thread while this message arrived.
-					pass
+		entry = f"{line}\n\t{message.describe()}\n"
+		if self.log:
+			self.log.write(entry)
+			self.log.flush()
+		log = self.record_log
+		if log:
+			try:
+				log.write(entry)
+				log.flush()
+			except ValueError:
+				# The r key closed the log on the main thread while this message arrived.
+				pass
+			except OSError as error:
+				self.record_log = None
+				with contextlib.suppress(OSError):
+					log.close()
+				self.show_message(f"error: Recording stopped: {error}")
 
 	def toggle_acars(self):
 		receiver = self.receiver
