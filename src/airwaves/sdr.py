@@ -987,6 +987,7 @@ class Receiver:
 		self.on_alert = None
 		self.on_acars = None
 		self.on_status_change = None
+		self.on_audio = None
 		self.error = None
 		self.hd = None
 		self.hd_resampler = Resampler(HD_AUDIO_RATE, AUDIO_RATE)
@@ -1134,7 +1135,10 @@ class Receiver:
 			self.select_hd_program(0)
 		if event.program == self.hd_program and not self.is_paused:
 			pcm = np.frombuffer(event.data, dtype=np.int16).reshape(-1, 2)
-			self.buffer.put(self.hd_resampler.process(pcm / PCM_SCALE))
+			audio = self.hd_resampler.process(pcm / PCM_SCALE)
+			self.buffer.put(audio)
+			if self.on_audio:
+				self.on_audio(audio)
 
 	@property
 	def acars_active(self):
@@ -1262,6 +1266,8 @@ class Receiver:
 					self.on_status_change()
 			if not self.is_paused:
 				self.buffer.put(audio)
+				if self.on_audio:
+					self.on_audio(audio)
 			self.raw_blocks.task_done()
 
 	def read_audio(self, frame_count):
