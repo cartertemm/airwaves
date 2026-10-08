@@ -28,7 +28,7 @@ def to_pcm(audio):
 class Recorder:
 	"""Writes stereo audio to a WAV or MP3 file on its own thread.
 
-	Call write(audio) from any thread with arrays of shape (frames, 2) from -1 to 1, and close() when done. Opening raises OSError if the file cannot be created. on_error, if set, is called on the recorder thread with the OSError that stopped the recording."""
+	Call write(audio) from any thread with arrays of shape (frames, 2) from -1 to 1, and close() when done. Opening raises OSError if the file cannot be created. on_error, if set, is called on the recorder thread with the exception that stopped the recording."""
 
 	def __init__(self, path, audio_rate, mp3):
 		self.path = path
@@ -70,7 +70,7 @@ class Recorder:
 					self.file.write(bytes(self.encoder.flush()))
 			finally:
 				self.file.close()
-		except OSError as error:
+		except Exception as error:
 			self.running = False
 			if self.on_error:
 				self.on_error(error)

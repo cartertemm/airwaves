@@ -1501,7 +1501,8 @@ class RadioCLI:
 			self.show_message(f"Saved {recorder.path}")
 		elif self.record_log:
 			log, self.record_log = self.record_log, None
-			log.close()
+			with contextlib.suppress(OSError):
+				log.close()
 			self.show_message(f"Saved {log.name}")
 		elif self.receiver.acars_active:
 			path = os.path.join(self.record_dir, ACARS_LOG_NAME)

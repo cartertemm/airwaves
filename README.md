@@ -114,7 +114,7 @@ uv run sdr 162.55 --county 004013 --alert-mode
 
 Stations send a required weekly test, usually on Wednesday between 11 AM and noon local time. It shows as `ALERT: Required Weekly Test`.
 
-Press `r` to record what is playing to a file, and `r` again to stop. The file is named by the date, time, and frequency, for example `2026-10-07 14-30-05 97.9MHz.mp3`, and goes in the current folder. Tuning, scanning, HD Radio, and casting do not stop the recording. Pausing leaves a gap. Use `--record-format wav` for a WAV file instead of MP3, and `--record-dir` to choose the folder:
+Press `r` to record what is playing to a file, and `r` again to stop. The file is named by the date, time, and frequency, for example `2026-10-07 14-30-05 97.9MHz.mp3`, and goes in the current folder. Tuning, scanning, HD Radio, and casting do not stop the recording. Pausing leaves a gap, except while casting, when the space key pauses the speaker and the recording continues. Use `--record-format wav` for a WAV file instead of MP3, and `--record-dir` to choose the folder:
 
 ```
 uv run sdr 97.9 --record-format wav --record-dir C:\Radio
