@@ -139,6 +139,7 @@ class StreamServer:
 	def stop(self):
 		self.running = False
 		self.server.shutdown()
+		self.server.server_close()
 
 	def add_client(self, client):
 		with self.clients_lock:
@@ -198,16 +199,20 @@ class Caster:
 		self.status = (False, False)
 
 	def start(self):
+		self.play_mode = self.coordinator.play_mode
 		self.running = True
 		self.stream.start()
 		threading.Thread(target=self.poll, daemon=True).start()
-		self.play_mode = self.coordinator.play_mode
-		self.coordinator.clear_queue()
-		for copy in range(QUEUE_COPIES):
-			self.coordinator.add_uri_to_queue(f"x-rincon-mp3radio://{self.stream.address}{copy}.mp3")
-		self.coordinator.play_from_queue(PLAYING_COPY)
-		# Sonos only takes a play mode while the queue is what plays.
-		self.coordinator.play_mode = "REPEAT_ALL"
+		try:
+			self.coordinator.clear_queue()
+			for copy in range(QUEUE_COPIES):
+				self.coordinator.add_uri_to_queue(f"x-rincon-mp3radio://{self.stream.address}{copy}.mp3")
+			self.coordinator.play_from_queue(PLAYING_COPY)
+			# Sonos only takes a play mode while the queue is what plays.
+			self.coordinator.play_mode = "REPEAT_ALL"
+		except Exception:
+			self.stop()
+			raise
 		self.receiver.local_audio = False
 
 	def stop(self, release=True):
