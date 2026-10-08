@@ -31,6 +31,7 @@ from rtlsdr.librtlsdr import librtlsdr
 from rtlsdr.rtlsdr import LibUSBError
 
 from . import flight_log, nrsc5
+from .recorder import Recorder
 
 VERSION = "0.2.1"
 VERSION_TEXT = f"SDR Tuner version {VERSION}"
@@ -169,9 +170,12 @@ SCAN_LOW_OFFSET = 100000
 SCAN_HIGH_OFFSET = 600000
 
 KEY_POLL_SECONDS = 0.02
-HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "m: mute", "i: show/hide signal", "d: next HD channel", "D: previous HD channel", "a: ACARS on/off", "c: cast to Sonos or AirPlay", "h: help", "Ctrl+C: quit")
+HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "m: mute", "i: show/hide signal", "d: next HD channel", "D: previous HD channel", "a: ACARS on/off", "c: cast to Sonos or AirPlay", "r: record on/off", "h: help", "Ctrl+C: quit")
 HELP_KEYS_PER_LINE = 3
 CAST_KINDS = ("sonos", "airplay")
+RECORD_FORMATS = ("wav", "mp3")
+ACARS_LOG_NAME = "flights.log"
+RECORD_TIME_FORMAT = "%Y-%m-%d %H-%M-%S"
 HELP_TEXT = "\n".join(", ".join(HELP_KEYS[i:i + HELP_KEYS_PER_LINE]) for i in range(0, len(HELP_KEYS), HELP_KEYS_PER_LINE))
 TITLE_LENGTH = 1024
 VK_MEDIA_NEXT_TRACK = 0xB0
@@ -1137,8 +1141,9 @@ class Receiver:
 			pcm = np.frombuffer(event.data, dtype=np.int16).reshape(-1, 2)
 			audio = self.hd_resampler.process(pcm / PCM_SCALE)
 			self.buffer.put(audio)
-			if self.on_audio:
-				self.on_audio(audio)
+			on_audio = self.on_audio
+			if on_audio:
+				on_audio(audio)
 
 	@property
 	def acars_active(self):
@@ -1266,8 +1271,9 @@ class Receiver:
 					self.on_status_change()
 			if not self.is_paused:
 				self.buffer.put(audio)
-				if self.on_audio:
-					self.on_audio(audio)
+				on_audio = self.on_audio
+				if on_audio:
+					on_audio(audio)
 			self.raw_blocks.task_done()
 
 	def read_audio(self, frame_count):
@@ -1413,13 +1419,17 @@ def choose_device(devices):
 class RadioCLI:
 	"""Keyboard controls and a status line for a Receiver."""
 
-	def __init__(self, receiver, alert_mode=False, sonos=None, airplay=None, log=None):
+	def __init__(self, receiver, alert_mode=False, sonos=None, airplay=None, log=None, record_format="mp3", record_dir="."):
 		self.receiver = receiver
 		self.receiver.on_status_change = self.show_status
 		self.receiver.on_alert = self.announce_alert
 		self.receiver.on_acars = self.announce_acars
 		self.acars_count = 0
 		self.log = log
+		self.record_format = record_format
+		self.record_dir = record_dir
+		self.recorder = None
+		self.record_log = None
 		self.alert_mode = alert_mode
 		self.waiting_for_alert = alert_mode
 		if alert_mode:
@@ -1454,9 +1464,14 @@ class RadioCLI:
 			# ACARS text has no fixed format, so show the message as sent rather than lose it.
 			line = message.describe()
 		self.show_message(line)
-		if self.log:
-			self.log.write(f"{line}\n\t{message.describe()}\n")
-			self.log.flush()
+		for log in (self.log, self.record_log):
+			if log:
+				try:
+					log.write(f"{line}\n\t{message.describe()}\n")
+					log.flush()
+				except ValueError:
+					# The r key closed the log on the main thread while this message arrived.
+					pass
 
 	def toggle_acars(self):
 		receiver = self.receiver
@@ -1468,6 +1483,44 @@ class RadioCLI:
 		receiver.acars_start()
 		channels = ", ".join(f"{freq_mhz:.3f}" for freq_mhz in receiver.band.acars_channels)
 		self.show_message(f"Decoding ACARS on {channels} MHz. No sound plays.")
+
+	def toggle_record(self):
+		if self.recorder:
+			recorder, self.recorder = self.recorder, None
+			self.receiver.on_audio = None
+			recorder.close()
+			self.show_message(f"Saved {recorder.path}")
+		elif self.record_log:
+			log, self.record_log = self.record_log, None
+			log.close()
+			self.show_message(f"Saved {log.name}")
+		elif self.receiver.acars_active:
+			path = os.path.join(self.record_dir, ACARS_LOG_NAME)
+			try:
+				self.record_log = open(path, "a", encoding="utf-8")
+			except OSError as error:
+				self.show_message(f"error: Could not open the log file: {error}")
+				return
+			self.show_message(f"Logging ACARS to {path}")
+		else:
+			frequency = self.receiver.band.format(self.receiver.freq_mhz).replace(" ", "")
+			name = f"{datetime.now().strftime(RECORD_TIME_FORMAT)} {frequency}.{self.record_format}"
+			path = os.path.join(self.record_dir, name)
+			try:
+				recorder = Recorder(path, AUDIO_RATE, self.record_format == "mp3")
+			except OSError as error:
+				self.show_message(f"error: Could not open the recording: {error}")
+				return
+			recorder.on_error = self.lose_recording
+			self.recorder = recorder
+			self.receiver.on_audio = recorder.write
+			self.show_message(f"Recording {path}")
+
+	def lose_recording(self, error):
+		"""Runs on the recorder thread when a write fails."""
+		self.receiver.on_audio = None
+		self.recorder = None
+		self.show_message(f"error: Recording stopped: {error}")
 
 	def cast_targets(self, kinds):
 		"""Returns (label, names, make caster) for each Sonos group and AirPlay device found, sorted so the same room sits together.
@@ -1563,6 +1616,8 @@ class RadioCLI:
 			parts.append("HD signal lost")
 		if self.caster:
 			parts.append(f"{self.caster.kind}: {self.caster.name}")
+		if self.recorder or self.record_log:
+			parts.append("Recording")
 		if output.muted:
 			parts.append("Muted")
 		if output.paused:
@@ -1707,6 +1762,9 @@ class RadioCLI:
 			else:
 				self.start_cast()
 			return
+		elif key == "r":
+			self.toggle_record()
+			return
 		elif key == "i":
 			self.show_signal = not self.show_signal
 		elif key == "h":
@@ -1741,6 +1799,8 @@ class RadioCLI:
 		except KeyboardInterrupt:
 			pass
 		finally:
+			if self.recorder or self.record_log:
+				self.toggle_record()
 			if self.caster:
 				self.caster.stop()
 			self.receiver.stop()
@@ -1757,6 +1817,8 @@ def main():
 	parser.add_argument("--alert-mode", action="store_true", help="Keep the sound off until a weather alert arrives. Needs a NOAA frequency.")
 	parser.add_argument("--acars", action="store_true", help="Start by decoding ACARS messages from aircraft. The a key goes back to the frequency.")
 	parser.add_argument("--log", metavar="FILE", help="Add each ACARS message to this file, as a readable line and as sent.")
+	parser.add_argument("--record-format", choices=RECORD_FORMATS, default="mp3", help="File type the r key records to. Default is mp3.")
+	parser.add_argument("--record-dir", default=".", metavar="FOLDER", help=f"Folder for recordings and {ACARS_LOG_NAME} from the r key. Default is the current folder.")
 	cast = parser.add_mutually_exclusive_group()
 	cast.add_argument("--sonos", nargs="?", const="", metavar="SPEAKER", help="Cast to the Sonos group with this speaker in it. Without a name, choose from a list.")
 	cast.add_argument("--airplay", nargs="?", const="", metavar="DEVICE", help="Cast to this AirPlay device. Without a name, choose from a list.")
@@ -1791,7 +1853,7 @@ def main():
 	if args.acars:
 		receiver.acars_start()
 	with log or contextlib.nullcontext():
-		RadioCLI(receiver, args.alert_mode, args.sonos, args.airplay, log).run()
+		RadioCLI(receiver, args.alert_mode, args.sonos, args.airplay, log, args.record_format, args.record_dir).run()
 	if receiver.error:
 		print(f"error: {receiver.error}")
 		return 1

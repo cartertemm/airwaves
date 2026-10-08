@@ -71,6 +71,7 @@ The other commands are not in the executable.
 * US and European band settings. In Europe, AM is 531 to 1602 kHz in 9 kHz steps, FM uses 50 microsecond de-emphasis, and there is no NOAA weather radio.
 * The status line and the window title show the frequency, and optionally the signal strength.
 * Casting to Sonos speakers, with the station and song shown in the Sonos app, or to AirPlay devices.
+* Recording to MP3 or WAV files with one key.
 
 AM and shortwave use the dongle's direct sampling mode. Some dongles need a hardware change before direct sampling picks up anything. Direct sampling stops at 14.4 MHz, so the shortwave bands above that need an upconverter.
 
@@ -113,6 +114,12 @@ uv run sdr 162.55 --county 004013 --alert-mode
 
 Stations send a required weekly test, usually on Wednesday between 11 AM and noon local time. It shows as `ALERT: Required Weekly Test`.
 
+Press `r` to record what is playing to a file, and `r` again to stop. The file is named by the date, time, and frequency, for example `2026-10-07 14-30-05 97.9MHz.mp3`, and goes in the current folder. Tuning, scanning, HD Radio, and casting do not stop the recording. Pausing leaves a gap. Use `--record-format wav` for a WAV file instead of MP3, and `--record-dir` to choose the folder:
+
+```
+uv run sdr 97.9 --record-format wav --record-dir C:\Radio
+```
+
 ### ACARS
 
 ACARS is a system that aircraft and ground stations use to send short text messages, such as position reports, weather requests, and gate information. Press `a` to decode ACARS, or start with `--acars`:
@@ -141,6 +148,8 @@ To also save the messages to a file, add `--log` with a file name. Each message 
 ```
 uv run sdr --acars --log flights.log
 ```
+
+While decoding ACARS, `r` appends messages to `flights.log` in the record folder (see `--record-dir`) in the same format, until you press `r` again. If a recording is already running when you enter ACARS mode, `r` stops that recording first.
 
 The status line shows the channels and how many messages have printed. Press `a` again to go back to the frequency you were on. Tuning, stepping, or scanning also leaves ACARS mode.
 
@@ -177,6 +186,7 @@ The keys work on Windows only.
 | `d` | Check for HD Radio, then go to the next HD channel. After the last channel, go back to analog. FM only. |
 | `D` (Shift+D) | Check for HD Radio, then go to the previous HD channel. From HD1, go back to analog. |
 | `c` | Start or stop casting to Sonos or AirPlay |
+| `r` | Start or stop recording to a file. In ACARS mode, start or stop logging messages to `flights.log`. |
 | `h` | List the keys |
 | Ctrl+C | Quit |
 
