@@ -7,6 +7,7 @@ requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
 dependencies = [
 	"airportsdata",
+	"lameenc",
 	"numpy",
 	"pyaudio",
 	# 0.4 and later need functions that the osmocom driver in the package does not have.
@@ -18,11 +19,9 @@ dependencies = [
 
 [project.optional-dependencies]
 sonos = [
-	"lameenc",
 	"soco",
 ]
 airplay = [
-	"lameenc",
 	"pyatv",
 ]
 

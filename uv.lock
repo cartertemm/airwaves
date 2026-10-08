@@ -198,6 +198,7 @@ source = { editable = "." }
 dependencies = [
     { name = "airportsdata", version = "20260315", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "airportsdata", version = "20260905", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "lameenc" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -209,19 +210,16 @@ dependencies = [
 
 [package.optional-dependencies]
 airplay = [
-    { name = "lameenc" },
     { name = "pyatv" },
 ]
 sonos = [
-    { name = "lameenc" },
     { name = "soco" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "airportsdata" },
-    { name = "lameenc", marker = "extra == 'airplay'" },
-    { name = "lameenc", marker = "extra == 'sonos'" },
+    { name = "lameenc" },
     { name = "numpy" },
     { name = "pyatv", marker = "extra == 'airplay'" },
     { name = "pyaudio" },
