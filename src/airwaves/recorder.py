@@ -35,12 +35,13 @@ class Recorder:
 		self.on_error = None
 		self.blocks = queue.Queue()
 		self.running = True
+		self.raw = open(path, "wb")
 		if mp3:
 			self.encoder = new_encoder(audio_rate)
-			self.file = open(path, "wb")
+			self.file = self.raw
 		else:
 			self.encoder = None
-			self.file = wave.open(path, "wb")
+			self.file = wave.open(self.raw, "wb")
 			self.file.setnchannels(2)
 			self.file.setsampwidth(2)
 			self.file.setframerate(audio_rate)
@@ -72,6 +73,7 @@ class Recorder:
 				self.on_error(error)
 		finally:
 			self.file.close()
+			self.raw.close()
 
 	def write_pcm(self, pcm):
 		if self.encoder:
