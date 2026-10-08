@@ -170,7 +170,7 @@ SCAN_LOW_OFFSET = 100000
 SCAN_HIGH_OFFSET = 600000
 
 KEY_POLL_SECONDS = 0.02
-HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "m: mute", "i: show/hide signal", "d: next HD channel", "D: previous HD channel", "a: ACARS on/off", "c: cast to Sonos or AirPlay", "r: record on/off", "h: help", "Ctrl+C: quit")
+HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "P: save preset", "p: choose preset", "m: mute", "i: show/hide signal", "d: next HD channel", "D: previous HD channel", "a: ACARS on/off", "c: cast to Sonos or AirPlay", "r: record on/off", "h: help", "Ctrl+C: quit")
 HELP_KEYS_PER_LINE = 3
 CAST_KINDS = ("sonos", "airplay")
 RECORD_FORMATS = ("wav", "mp3")
@@ -1416,6 +1416,39 @@ def choose_device(devices):
 	return None if index is None else devices[index]
 
 
+PRESET_PATTERN = re.compile(r"(\d+(?:\.\d+)?)(?:\s+HD(\d+))?", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class Preset:
+	"""A saved station: a frequency, and the HD channel (0 is HD1) or None for analog."""
+	freq_mhz: float
+	hd_program: int = None
+
+	@classmethod
+	def parse(cls, text):
+		"""Returns the Preset written as text, like "97.9" or "99.9 HD2", or None if text is not one."""
+		match = PRESET_PATTERN.fullmatch(text.strip())
+		if match is None:
+			return None
+		program = int(match.group(2)) - 1 if match.group(2) else None
+		if program is not None and program < 0:
+			return None
+		return cls(float(match.group(1)), program)
+
+	def text(self):
+		frequency = f"{self.freq_mhz:.4f}".rstrip("0").rstrip(".")
+		return frequency if self.hd_program is None else f"{frequency} HD{self.hd_program + 1}"
+
+	def describe(self, bands):
+		"""Returns the preset for a menu, in the band's own format, or marked not available outside the bands."""
+		band = band_for(self.freq_mhz, bands)
+		if band is None:
+			return f"{self.text()} (not available)"
+		frequency = band.format(self.freq_mhz)
+		return frequency if self.hd_program is None else f"{frequency} HD{self.hd_program + 1}"
+
+
 class RadioCLI:
 	"""Keyboard controls and a status line for a Receiver."""
 
@@ -1739,6 +1772,71 @@ class RadioCLI:
 			receiver.hd_stop()
 			self.show_message(f"No HD on {receiver.band.format(receiver.freq_mhz)}.")
 
+	def save_preset(self):
+		receiver = self.receiver
+		if receiver.acars_active:
+			self.show_message("Cannot save a preset while decoding ACARS.")
+			return
+		current = Preset(receiver.freq_mhz, receiver.hd_program if receiver.hd_active else None)
+		for number, text in config.presets().items():
+			preset = Preset.parse(text)
+			if preset and preset.text() == current.text():
+				self.show_message(f"{current.describe(receiver.bands)} is already preset {number}.")
+				return
+		number = config.next_preset_number()
+		try:
+			config.save(str(number), current.text(), config.PRESETS)
+		except OSError as error:
+			self.show_message(f"Could not save the preset to {config.FILE_NAME}: {error}")
+			return
+		self.show_message(f"{current.describe(receiver.bands)} saved to preset {number}")
+
+	def choose_preset(self):
+		presets = config.presets()
+		if not presets:
+			self.show_message("No presets. Press P to save the current station.")
+			return
+		numbers = list(presets)
+		items = []
+		for number in numbers:
+			preset = Preset.parse(presets[number])
+			items.append(f"{number}: " + (preset.describe(self.receiver.bands) if preset else f"{presets[number]} (not available)"))
+		choice = self.prompt(lambda: self.preset_menu(items, numbers))
+		if choice is None:
+			self.show_status()
+			return
+		preset = Preset.parse(presets[choice])
+		if preset is None or band_for(preset.freq_mhz, self.receiver.bands) is None:
+			self.show_message(f"error: Preset {choice} is not available.")
+			return
+		self.tune_preset(preset)
+
+	@staticmethod
+	def preset_menu(items, numbers):
+		"""Shows the presets and returns the chosen preset number, or None for blank input."""
+		for item in items:
+			print(item)
+		while True:
+			text = input("Preset number (blank to cancel): ").strip()
+			if not text:
+				return None
+			if text.isdigit() and int(text) in numbers:
+				return int(text)
+			print("error: Not a preset number. Please try again.")
+
+	def tune_preset(self, preset):
+		receiver = self.receiver
+		if receiver.acars_active:
+			receiver.acars_stop()
+		self.announce_leaving_hd()
+		receiver.tune(preset.freq_mhz)
+		if preset.hd_program is None:
+			self.show_status()
+			return
+		self.start_hd()
+		if receiver.hd_active:
+			receiver.select_hd_program(preset.hd_program)
+
 	def change_volume(self, delta):
 		output = self.output
 		output.volume += delta
@@ -1792,6 +1890,12 @@ class RadioCLI:
 			return
 		elif key == "t":
 			self.prompt_frequency()
+			return
+		elif key == "P":
+			self.save_preset()
+			return
+		elif key == "p":
+			self.choose_preset()
 			return
 		self.show_status()
 

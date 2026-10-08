@@ -98,11 +98,18 @@ uv run sdr 162.55
 
 If you have more than one dongle, the script asks you to choose one before it starts playback.
 
-The volume is saved to `airwaves.conf` in the current folder each time you change it with `_` or `+`, and used the next time the script starts. Speaker volume while casting is not saved. The file looks like this:
+Press `P` (Shift+P) to save the playing station, or HD channel, to the next free preset number. Press `p` to list the presets and type the number of the one to play, or nothing to cancel. A preset that is outside the bands of the current region shows as not available.
+
+The volume and presets are saved to `airwaves.conf` in the current folder, and used the next time the script starts. The volume is saved each time you change it with `_` or `+`. Speaker volume while casting is not saved. The file looks like this, and you can edit it:
 
 ```
 [airwaves]
 volume = 80
+
+[presets]
+1 = 97.9
+2 = 99.9 HD2
+3 = 1.4
 ```
 
 The script prints its version when it starts. To only print the version, run `uv run sdr --version` (or `-v`).
