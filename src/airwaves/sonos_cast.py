@@ -4,11 +4,10 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import lameenc
 import numpy as np
 
-BITRATE = 320
-MP3_QUALITY = 2
+from .recorder import BITRATE, new_encoder
+
 CHUNK_SECONDS = 0.1
 # Data before each ICY metadata block, the title Sonos shows for radio streams.
 META_INTERVAL = 16000
@@ -45,15 +44,6 @@ def local_ip(address):
 	with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
 		probe.connect((address, SONOS_PORT))
 		return probe.getsockname()[0]
-
-
-def new_encoder(audio_rate):
-	encoder = lameenc.Encoder()
-	encoder.set_bit_rate(BITRATE)
-	encoder.set_in_sample_rate(audio_rate)
-	encoder.set_channels(2)
-	encoder.set_quality(MP3_QUALITY)
-	return encoder
 
 
 def silent_chunk(audio_rate):
