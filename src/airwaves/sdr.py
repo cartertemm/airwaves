@@ -30,7 +30,7 @@ from rtlsdr import RtlSdr
 from rtlsdr.librtlsdr import librtlsdr
 from rtlsdr.rtlsdr import LibUSBError
 
-from . import flight_log, nrsc5
+from . import config, flight_log, nrsc5
 from .recorder import Recorder
 
 VERSION = "0.2.1"
@@ -1739,14 +1739,24 @@ class RadioCLI:
 			receiver.hd_stop()
 			self.show_message(f"No HD on {receiver.band.format(receiver.freq_mhz)}.")
 
+	def change_volume(self, delta):
+		output = self.output
+		output.volume += delta
+		if output is not self.receiver:
+			return
+		try:
+			config.save("volume", output.volume)
+		except OSError as error:
+			self.show_message(f"Could not save the volume to {config.FILE_NAME}: {error}")
+
 	def handle_key(self, key):
 		output = self.output
 		if key == " ":
 			output.paused = not output.paused
 		elif key == "_":
-			output.volume -= VOLUME_STEP
+			self.change_volume(-VOLUME_STEP)
 		elif key == "+":
-			output.volume += VOLUME_STEP
+			self.change_volume(VOLUME_STEP)
 		elif key == "s":
 			self.step(-1)
 		elif key == "w":
@@ -1860,6 +1870,7 @@ def main():
 		return 1
 	receiver = Receiver(device.index, args.frequency, region)
 	receiver.county = args.county
+	receiver.volume = config.get_int(config.load(), "volume", DEFAULT_VOLUME, 0, MAX_VOLUME)
 	if args.acars:
 		receiver.acars_start()
 	with log or contextlib.nullcontext():
