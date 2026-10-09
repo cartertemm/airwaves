@@ -56,3 +56,6 @@ Thumbs.db
 
 # ACARS flight logs
 flights.log
+
+# Saved volume and presets
+airwaves.conf
