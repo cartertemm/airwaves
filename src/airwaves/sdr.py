@@ -33,7 +33,7 @@ from rtlsdr.rtlsdr import LibUSBError
 from . import config, flight_log, nrsc5
 from .recorder import Recorder
 
-VERSION = "0.2.1"
+VERSION = "0.3"
 VERSION_TEXT = f"SDR Tuner version {VERSION}"
 VOLUME_STEP = 10
 DEFAULT_VOLUME = 50
