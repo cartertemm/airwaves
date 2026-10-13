@@ -5,6 +5,7 @@ import pytest
 
 pytest.importorskip("termios")
 import pty
+import signal
 import termios
 import tty
 
@@ -93,3 +94,36 @@ def test_quiet_driver_hides_only_what_is_printed_inside_it(capfd):
 		os.write(2, b"usb noise")
 	os.write(2, b"real error")
 	assert capfd.readouterr().err == "real error"
+
+
+def shell_resumes_the_program():
+	"""Does what a shell does after Ctrl+Z and fg: puts its own terminal mode back, then continues the program."""
+	fd = sys.stdin.fileno()
+	mode = termios.tcgetattr(fd)
+	mode[tty.LFLAG] |= termios.ECHO | termios.ICANON
+	termios.tcsetattr(fd, termios.TCSADRAIN, mode)
+	signal.raise_signal(signal.SIGCONT)
+
+
+def test_keys_still_work_after_the_program_is_suspended_and_resumed(keyboard):
+	with sdr.terminal_mode(line_input=False):
+		shell_resumes_the_program()
+		assert not echo_is_on()
+		os.write(keyboard, b"w")
+		assert sdr.read_key() == "w"
+
+
+def test_a_prompt_keeps_its_echo_when_resumed(keyboard):
+	with sdr.terminal_mode(line_input=False):
+		with sdr.terminal_mode(line_input=True):
+			shell_resumes_the_program()
+			assert echo_is_on()
+		shell_resumes_the_program()
+		assert not echo_is_on()
+
+
+def test_terminal_mode_stops_watching_for_resume_when_it_ends(keyboard):
+	before = signal.getsignal(signal.SIGCONT)
+	with sdr.terminal_mode(line_input=False):
+		pass
+	assert signal.getsignal(signal.SIGCONT) == before

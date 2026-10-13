@@ -10,6 +10,7 @@ import os
 import queue
 import re
 import shutil
+import signal
 import sys
 import threading
 import time
@@ -1412,16 +1413,23 @@ def terminal_mode(line_input):
 		return
 	fd = sys.stdin.fileno()
 	saved = termios.tcgetattr(fd)
-	if line_input:
-		mode = termios.tcgetattr(fd)
-		mode[tty.LFLAG] |= termios.ECHO | termios.ICANON
-		termios.tcsetattr(fd, termios.TCSADRAIN, mode)
-	else:
-		# Unlike raw mode, cbreak leaves Ctrl+C raising KeyboardInterrupt.
-		tty.setcbreak(fd)
+
+	def apply(*resume_signal):
+		if line_input:
+			mode = termios.tcgetattr(fd)
+			mode[tty.LFLAG] |= termios.ECHO | termios.ICANON
+			termios.tcsetattr(fd, termios.TCSADRAIN, mode)
+		else:
+			# Unlike raw mode, cbreak leaves Ctrl+C raising KeyboardInterrupt.
+			tty.setcbreak(fd)
+
+	apply()
+	# After Ctrl+Z and fg, the shell leaves its own mode on the terminal.
+	on_resume = signal.signal(signal.SIGCONT, apply)
 	try:
 		yield
 	finally:
+		signal.signal(signal.SIGCONT, on_resume)
 		termios.tcsetattr(fd, termios.TCSADRAIN, saved)
 
 
