@@ -34,8 +34,16 @@ else:
 	import tty
 if sys.platform == "darwin":
 	from .libraries import RTLSDR_DYLIB, library_path
+
+	def load_driver():
+		try:
+			return ctypes.CDLL(library_path(RTLSDR_DYLIB))
+		except OSError:
+			# With None, pyrtlsdr searches on its own and then says that librtlsdr is missing.
+			return None
+
 	# pyrtlsdr does not search Homebrew or the app bundle. It asks pyrtlsdrlib for the driver before it searches, so we stand in for that package.
-	sys.modules["pyrtlsdrlib"] = types.SimpleNamespace(load_librtlsdr=lambda: ctypes.CDLL(library_path(RTLSDR_DYLIB)))
+	sys.modules["pyrtlsdrlib"] = types.SimpleNamespace(load_librtlsdr=load_driver)
 from rtlsdr import RtlSdr
 from rtlsdr.librtlsdr import librtlsdr
 from rtlsdr.rtlsdr import LibUSBError
