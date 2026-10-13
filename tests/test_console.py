@@ -86,3 +86,10 @@ def test_set_title_writes_nothing_to_a_file(capsys):
 
 def test_get_title_is_empty_where_it_cannot_be_read():
 	assert sdr.get_title() == ""
+
+
+def test_quiet_driver_hides_only_what_is_printed_inside_it(capfd):
+	with sdr.quiet_driver():
+		os.write(2, b"usb noise")
+	os.write(2, b"real error")
+	assert capfd.readouterr().err == "real error"

@@ -195,6 +195,7 @@ ESCAPE = b"\x1b"
 # Longer than any arrow or function key sequence.
 ESCAPE_SEQUENCE_BYTES = 16
 TITLE_SEQUENCE = "\033]0;{}\007"
+STDERR_FD = 2
 
 
 @dataclass(frozen=True)
@@ -938,9 +939,18 @@ class Device:
 def quiet_driver():
 	"""Hides what librtlsdr prints while it opens and tunes the dongle.
 
-	The driver and nrsc5 print to the stderr of msvcrt.dll, which Python does not use. We make only that point at NUL, so other errors show as expected."""
+	On Windows the driver and nrsc5 print to the stderr of msvcrt.dll, which Python does not use. We make only that point at NUL, so other errors show as expected. Elsewhere they share fd 2 with Python, so Python's stderr is hidden too while this runs."""
 	if sys.platform != "win32":
-		yield
+		sys.stderr.flush()
+		saved = os.dup(STDERR_FD)
+		discard = os.open(os.devnull, os.O_WRONLY)
+		os.dup2(discard, STDERR_FD)
+		os.close(discard)
+		try:
+			yield
+		finally:
+			os.dup2(saved, STDERR_FD)
+			os.close(saved)
 		return
 	crt = ctypes.cdll.msvcrt
 	# msvcrt.dll starts with Python's STDERR_HANDLE as its fd 2, and _dup2 closes the handle it replaces. Protected, it stays open.
