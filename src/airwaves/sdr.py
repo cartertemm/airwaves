@@ -13,6 +13,7 @@ import shutil
 import sys
 import threading
 import time
+import types
 from dataclasses import dataclass, replace
 from functools import partial
 from datetime import datetime, timedelta, timezone
@@ -26,6 +27,14 @@ if sys.platform == "win32":
 	os.add_dll_directory(os.path.dirname(__file__))
 	# Python's console stderr keeps writing to this handle, even after fd 2 changes.
 	STDERR_HANDLE = ctypes.c_void_p(msvcrt.get_osfhandle(2))
+else:
+	import select
+	import termios
+	import tty
+if sys.platform == "darwin":
+	from .libraries import RTLSDR_DYLIB, library_path
+	# pyrtlsdr does not search Homebrew or the app bundle. It asks pyrtlsdrlib for the driver before it searches, so we stand in for that package.
+	sys.modules["pyrtlsdrlib"] = types.SimpleNamespace(load_librtlsdr=lambda: ctypes.CDLL(library_path(RTLSDR_DYLIB)))
 from rtlsdr import RtlSdr
 from rtlsdr.librtlsdr import librtlsdr
 from rtlsdr.rtlsdr import LibUSBError
