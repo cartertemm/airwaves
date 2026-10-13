@@ -59,3 +59,4 @@ flights.log
 
 # Saved volume and presets
 airwaves.conf
+src/airwaves/*.dylib

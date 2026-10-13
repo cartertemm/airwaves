@@ -7,6 +7,8 @@ import os
 import platform
 import socket
 
+from .libraries import NRSC5_DYLIB, library_path
+
 
 class Mode(enum.Enum):
     FM = 0
@@ -698,7 +700,7 @@ class NRSC5:
             elif platform.system() == "Linux":
                 lib_name = "libnrsc5.so"
             elif platform.system() == "Darwin":
-                lib_name = "libnrsc5.dylib"
+                lib_name = library_path(NRSC5_DYLIB)
             else:
                 raise NRSC5Error("Unsupported platform: " + platform.system())
             NRSC5.libnrsc5 = ctypes.cdll.LoadLibrary(lib_name)
