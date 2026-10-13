@@ -1,6 +1,6 @@
 # Airwaves
 
-If you don't have Python or don't want to worry about the internals, you can [download the Windows app here](https://github.com/cartertemm/airwaves/releases/latest).
+If you don't have Python or don't want to worry about the internals, you can [download the Windows or macOS app here](https://github.com/cartertemm/airwaves/releases/latest).
 
 This repository contains commands for digitally receiving and getting information about radio stations.
 
@@ -27,6 +27,14 @@ Windows does not include a driver that works with the dongle, so install the Win
 When Zadig finishes, the dongle is ready to use with `sdr`.
 
 ### macOS
+
+The macOS download is for Apple silicon and includes everything it needs. Unpack `sdr-macos-arm64.tar.gz` and run `./sdr 97.9` in Terminal. The app is not signed, so the first time, tell macOS to trust it:
+
+```
+xattr -d com.apple.quarantine sdr
+```
+
+The rest of this section is for running from this folder.
 
 macOS needs no USB driver for the dongle. To run `sdr` from this folder, install the library that talks to the dongle, and PortAudio for sound, with [Homebrew](https://brew.sh):
 
@@ -71,6 +79,14 @@ build.bat
 ```
 
 The other commands are not in the executable.
+
+### Building a macOS executable
+
+On an Apple silicon Mac with Homebrew, run `build.sh`. It builds `dist/sdr`, one file that includes Python, the packages, the dongle driver, and libnrsc5, with Sonos and AirPlay casting:
+
+```
+./build.sh
+```
 
 ## SDR Listener
 
@@ -380,4 +396,4 @@ uv run broadcastify --stream 20973
 
 ## License
 
-GPL version 3 or later, because `sdr` includes libnrsc5. It also includes the [osmocom rtl-sdr](https://gitea.osmocom.org/sdr/rtl-sdr) dongle driver for Windows (GPL version 2 or later). See `LICENSE`.
+GPL version 3 or later, because `sdr` includes libnrsc5. The Windows and macOS apps also include the [osmocom rtl-sdr](https://gitea.osmocom.org/sdr/rtl-sdr) dongle driver (GPL version 2 or later). See `LICENSE`.

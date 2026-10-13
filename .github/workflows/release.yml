@@ -30,3 +30,26 @@ jobs:
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes
           gh release upload "$TAG" dist/sdr.exe --clobber
+
+  build-macos:
+    # The Windows job creates the release. Two jobs creating it at once would race.
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Build sdr
+        run: ./build.sh
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # A bare file downloaded from a release loses its executable bit.
+          tar -czf sdr-macos-arm64.tar.gz -C dist sdr
+          gh release upload "$TAG" sdr-macos-arm64.tar.gz --clobber
