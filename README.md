@@ -26,6 +26,22 @@ Windows does not include a driver that works with the dongle, so install the Win
 
 When Zadig finishes, the dongle is ready to use with `sdr`.
 
+### macOS
+
+macOS needs no USB driver for the dongle. To run `sdr` from this folder, install the library that talks to the dongle, and PortAudio for sound, with [Homebrew](https://brew.sh):
+
+```
+brew install librtlsdr portaudio
+```
+
+HD Radio needs libnrsc5, which Homebrew does not have. To build it, run:
+
+```
+./build-nrsc5.sh
+```
+
+It installs what the build needs with Homebrew and puts `libnrsc5.dylib` in `src/airwaves`. Without it, everything except HD Radio works.
+
 ## Installing
 
 The commands need Python 3.10 or later and [uv](https://docs.astral.sh/uv/). In this folder, run:
@@ -182,7 +198,7 @@ Limits:
 
 ### Keystrokes
 
-The keys work on Windows only.
+The keys work on Windows and macOS.
 
 | Key | Action |
 | --- | --- |
@@ -204,7 +220,7 @@ The keys work on Windows only.
 | `h` | List the keys |
 | Ctrl+C | Quit |
 
-The keyboard's Previous Track and Next Track keys also scan, even when another window has focus.
+On Windows, the keyboard's Previous Track and Next Track keys also scan, even when another window has focus.
 
 When you press `d`, the analog sound stops and the script checks the station for HD Radio for up to 3 seconds. If it finds HD, HD1 plays and the status line shows the channel and how many the station has, for example `93.3 MHz HD2 of 3 | Oldies 92.7`. Channel names and more channels can show up a few seconds later. Moving between HD channels is instant. Tuning, stepping, or scanning goes back to analog.
 
@@ -242,7 +258,7 @@ Casting replaces the Sonos queue for the group. When you stop casting or quit, t
 * Sonos speakers preserve their volume. Other AirPlay devices start at 30%.
 * A Sonos speaker that is in a group leaves the group while AirPlay plays. When casting stops, the script puts it back, if the `sonos` extra is installed.
 
-The first time you cast, Windows may ask whether Python can use the network. Allow it on private networks, otherwise the speakers will not be able to reach the script.
+The first time you cast, Windows or macOS may ask whether Python can use the network. Allow it (on Windows, for private networks), otherwise the speakers will not be able to reach the script.
 
 ### Using the receiver from another program
 
