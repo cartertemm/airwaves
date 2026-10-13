@@ -1,12 +1,20 @@
-# PyInstaller spec for dist\sdr.exe. Run it through build.bat.
+# PyInstaller spec for dist\sdr.exe and dist/sdr. Run it through build.bat or build.sh.
 import os
+import sys
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
-# sdr and nrsc5 load their DLLs from the airwaves folder, and the casting
-# modules are only imported when casting, so PyInstaller cannot find them alone.
-dlls = ("libnrsc5.dll", "rtlsdr.dll")
-binaries = [(os.path.join(SPECPATH, "src", "airwaves", name), "airwaves") for name in dlls]
+# sdr and nrsc5 load their libraries by path, and the casting modules are
+# only imported when casting, so PyInstaller cannot find them alone.
+if sys.platform == "darwin":
+	sys.path.insert(0, os.path.join(SPECPATH, "src"))
+	from airwaves.libraries import NRSC5_DYLIB, RTLSDR_DYLIB, library_path
+	# At the top level, under the name libnrsc5 links to, so the driver PyInstaller
+	# collects for libnrsc5 and the one sdr loads are a single file.
+	binaries = [(library_path(name), ".") for name in (RTLSDR_DYLIB, NRSC5_DYLIB)]
+else:
+	dlls = ("libnrsc5.dll", "rtlsdr.dll")
+	binaries = [(os.path.join(SPECPATH, "src", "airwaves", name), "airwaves") for name in dlls]
 # airportsdata reads its airport list from its own folder.
 datas = collect_data_files("airportsdata")
 hiddenimports = collect_submodules("pyatv") + collect_submodules("soco")
