@@ -191,6 +191,9 @@ VK_MEDIA_NEXT_TRACK = 0xB0
 VK_MEDIA_PREV_TRACK = 0xB1
 WM_HOTKEY = 0x0312
 HANDLE_FLAG_PROTECT_FROM_CLOSE = 0x2
+ESCAPE = b"\x1b"
+# Longer than any arrow or function key sequence.
+ESCAPE_SEQUENCE_BYTES = 16
 
 
 @dataclass(frozen=True)
@@ -1388,7 +1391,47 @@ def menu(prompt, items):
 		return result - 1
 
 
+@contextlib.contextmanager
+def terminal_mode(line_input):
+	"""Sets how the terminal hands over typing, and puts the old mode back after.
+
+	read_key needs each key as it is pressed, without echo. input() needs echo and whole lines. A Windows console gives both without any setup."""
+	if sys.platform == "win32" or not sys.stdin.isatty():
+		yield
+		return
+	fd = sys.stdin.fileno()
+	saved = termios.tcgetattr(fd)
+	if line_input:
+		mode = termios.tcgetattr(fd)
+		mode[tty.LFLAG] |= termios.ECHO | termios.ICANON
+		termios.tcsetattr(fd, termios.TCSADRAIN, mode)
+	else:
+		# Unlike raw mode, cbreak leaves Ctrl+C raising KeyboardInterrupt.
+		tty.setcbreak(fd)
+	try:
+		yield
+	finally:
+		termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+
+
+def read_terminal_key():
+	if not sys.stdin.isatty():
+		return None
+	fd = sys.stdin.fileno()
+	if not select.select([fd], [], [], 0)[0]:
+		return None
+	key = os.read(fd, 1)
+	if key == ESCAPE:
+		# Arrow and function keys send Escape and then letters, all at once. Left arrow ends in D, which would act as Shift+D.
+		if select.select([fd], [], [], 0)[0]:
+			os.read(fd, ESCAPE_SEQUENCE_BYTES)
+		return None
+	return key.decode(errors="ignore") or None
+
+
 def read_key():
+	if sys.platform != "win32":
+		return read_terminal_key()
 	import msvcrt
 	if not msvcrt.kbhit():
 		return None
@@ -1700,7 +1743,8 @@ class RadioCLI:
 			self.prompting = True
 			sys.stdout.write("\n")
 		try:
-			return ask()
+			with terminal_mode(line_input=True):
+				return ask()
 		finally:
 			self.prompting = False
 
@@ -1921,14 +1965,15 @@ class RadioCLI:
 		if self.airplay is not None:
 			self.start_cast(("airplay",), self.airplay)
 		try:
-			while self.receiver.running:
-				key = read_key()
-				if key is None:
-					time.sleep(KEY_POLL_SECONDS)
-				elif key == "\x03":
-					break
-				else:
-					self.handle_key(key)
+			with terminal_mode(line_input=False):
+				while self.receiver.running:
+					key = read_key()
+					if key is None:
+						time.sleep(KEY_POLL_SECONDS)
+					elif key == "\x03":
+						break
+					else:
+						self.handle_key(key)
 		except KeyboardInterrupt:
 			pass
 		finally:
