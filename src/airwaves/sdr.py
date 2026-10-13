@@ -1977,7 +1977,8 @@ class RadioCLI:
 			print("Alert mode: the sound stays off until a weather alert arrives.")
 		self.show_status()
 		self.receiver.start()
-		threading.Thread(target=self.watch_media_keys, daemon=True).start()
+		if sys.platform == "win32":
+			threading.Thread(target=self.watch_media_keys, daemon=True).start()
 		if self.sonos is not None:
 			self.start_cast(("sonos",), self.sonos)
 		if self.airplay is not None:
