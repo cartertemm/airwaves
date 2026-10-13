@@ -68,3 +68,21 @@ def test_terminal_mode_turns_echo_off_for_keys_and_on_for_prompts(keyboard):
 			assert echo_is_on()
 		assert not echo_is_on()
 	assert echo_is_on()
+
+
+def test_set_title_sends_the_title_to_a_terminal(monkeypatch):
+	master, slave = pty.openpty()
+	with os.fdopen(slave, "w") as stdout:
+		monkeypatch.setattr(sys, "stdout", stdout)
+		sdr.set_title("93.3 MHz")
+		assert os.read(master, 100) == b"\x1b]0;93.3 MHz\x07"
+	os.close(master)
+
+
+def test_set_title_writes_nothing_to_a_file(capsys):
+	sdr.set_title("93.3 MHz")
+	assert capsys.readouterr().out == ""
+
+
+def test_get_title_is_empty_where_it_cannot_be_read():
+	assert sdr.get_title() == ""

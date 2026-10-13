@@ -194,6 +194,7 @@ HANDLE_FLAG_PROTECT_FROM_CLOSE = 0x2
 ESCAPE = b"\x1b"
 # Longer than any arrow or function key sequence.
 ESCAPE_SEQUENCE_BYTES = 16
+TITLE_SEQUENCE = "\033]0;{}\007"
 
 
 @dataclass(frozen=True)
@@ -1448,13 +1449,20 @@ def console_width():
 
 
 def get_title():
+	if sys.platform != "win32":
+		# A terminal cannot report its title. Setting an empty one makes it show its own again.
+		return ""
 	title = ctypes.create_unicode_buffer(TITLE_LENGTH)
 	ctypes.windll.kernel32.GetConsoleTitleW(title, TITLE_LENGTH)
 	return title.value
 
 
 def set_title(title):
-	ctypes.windll.kernel32.SetConsoleTitleW(title)
+	if sys.platform == "win32":
+		ctypes.windll.kernel32.SetConsoleTitleW(title)
+	elif sys.stdout.isatty():
+		sys.stdout.write(TITLE_SEQUENCE.format(title))
+		sys.stdout.flush()
 
 
 def band_ranges(bands):
