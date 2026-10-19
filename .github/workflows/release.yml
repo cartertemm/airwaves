@@ -53,3 +53,32 @@ jobs:
           # A bare file downloaded from a release loses its executable bit.
           tar -czf sdr-macos-arm64.tar.gz -C dist sdr
           gh release upload "$TAG" sdr-macos-arm64.tar.gz --clobber
+
+  build-linux:
+    needs: build
+    runs-on: ubuntu-latest
+    # Built on Ubuntu 22.04, the binary runs on distributions with glibc 2.35 or later.
+    container: ubuntu:22.04
+    steps:
+      - name: Install tools
+        run: apt-get update && apt-get install -y git curl ca-certificates gh
+
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.13"
+
+      - name: Build sdr
+        shell: bash
+        run: ./build.sh
+
+      - name: Upload to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          tar -czf sdr-linux-x86_64.tar.gz -C dist sdr
+          gh release upload "$TAG" sdr-linux-x86_64.tar.gz --clobber
