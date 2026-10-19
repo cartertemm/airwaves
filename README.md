@@ -1,6 +1,6 @@
 # Airwaves
 
-If you don't have Python or don't want to worry about the internals, you can [download the Windows or macOS app here](https://github.com/cartertemm/airwaves/releases/latest).
+If you don't have Python or don't want to worry about the internals, you can [download the Windows, macOS, or Linux app here](https://github.com/cartertemm/airwaves/releases/latest).
 
 This repository contains commands for digitally receiving and getting information about radio stations.
 
@@ -50,6 +50,39 @@ HD Radio needs libnrsc5, which Homebrew does not have. To build it, run:
 
 It installs what the build needs with Homebrew and puts `libnrsc5.dylib` in `src/airwaves`. Without it, everything except HD Radio works.
 
+### Linux
+
+The Linux download is for x86_64 PCs and includes the dongle driver and HD Radio. It needs glibc 2.35 or later, which Ubuntu 22.04, Debian 12, and newer distributions have. Unpack `sdr-linux-x86_64.tar.gz` and run `./sdr 97.9`.
+
+Linux only lets root use the dongle until a udev rule gives other users access. The `rtl-sdr` package installs the rule, along with the dongle driver that `sdr` uses when you run it from this folder:
+
+```
+sudo apt install rtl-sdr
+```
+
+On other distributions, the package is usually called `rtl-sdr` too. After installing it, unplug the dongle and plug it back in.
+
+Linux may also load a TV driver, `dvb_usb_rtl28xxu`, for the dongle. The Linux download takes the dongle from it by itself. If `sdr` says that this module is using the dongle, unload it and keep it from loading again:
+
+```
+sudo modprobe -r dvb_usb_rtl28xxu
+echo "blacklist dvb_usb_rtl28xxu" | sudo tee /etc/modprobe.d/blacklist-rtl28xxu.conf
+```
+
+The rest of this section is for running from this folder. PyAudio builds against PortAudio during `uv sync`, so install it and a compiler:
+
+```
+sudo apt install portaudio19-dev build-essential
+```
+
+HD Radio needs libnrsc5. On Debian or Ubuntu, run:
+
+```
+./build-nrsc5.sh
+```
+
+It installs what the build needs with `apt` and puts `libnrsc5.so` in `src/airwaves`. Without it, everything except HD Radio works.
+
 ## Installing
 
 The commands need Python 3.10 or later and [uv](https://docs.astral.sh/uv/). In this folder, run:
@@ -80,9 +113,9 @@ build.bat
 
 The other commands are not in the executable.
 
-### Building a macOS executable
+### Building a macOS or Linux executable
 
-On an Apple silicon Mac with Homebrew, run `build.sh`. It builds `dist/sdr`, one file that includes Python, the packages, the dongle driver, and libnrsc5, with Sonos and AirPlay casting:
+On an Apple silicon Mac with Homebrew, or on Debian or Ubuntu, run `build.sh`. It builds `dist/sdr`, one file that includes Python, the packages, the dongle driver, and libnrsc5, with Sonos and AirPlay casting. On Linux it builds the dongle driver from source, and the file runs on distributions as old as the one it was built on:
 
 ```
 ./build.sh
@@ -214,7 +247,7 @@ Limits:
 
 ### Keystrokes
 
-The keys work on Windows and macOS.
+The keys work on Windows, macOS, and Linux.
 
 | Key | Action |
 | --- | --- |
@@ -396,4 +429,4 @@ uv run broadcastify --stream 20973
 
 ## License
 
-GPL version 3 or later, because `sdr` includes libnrsc5. The Windows and macOS apps also include the [osmocom rtl-sdr](https://gitea.osmocom.org/sdr/rtl-sdr) dongle driver (GPL version 2 or later). See `LICENSE`.
+GPL version 3 or later, because `sdr` includes libnrsc5. The Windows, macOS, and Linux apps also include the [osmocom rtl-sdr](https://gitea.osmocom.org/sdr/rtl-sdr) dongle driver (GPL version 2 or later). See `LICENSE`.
