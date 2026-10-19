@@ -208,6 +208,13 @@ ESCAPE = b"\x1b"
 ESCAPE_SEQUENCE_BYTES = 16
 TITLE_SEQUENCE = "\033]0;{}\007"
 STDERR_FD = 2
+LIBUSB_ERROR_ACCESS = -3
+LIBUSB_ERROR_BUSY = -6
+DONGLE_IN_USE = "Another program is using the dongle. Close it and try again."
+LINUX_DONGLE_ERRORS = {
+	LIBUSB_ERROR_ACCESS: "You do not have permission to use the dongle. Install the RTL-SDR udev rule (the rtl-sdr package has one), then unplug the dongle and plug it back in.",
+	LIBUSB_ERROR_BUSY: "Another program, or the dvb_usb_rtl28xxu TV kernel module, is using the dongle. Close other radio programs, or run: sudo modprobe -r dvb_usb_rtl28xxu. To keep the module from loading again, see the Linux section of the README.",
+}
 
 
 @dataclass(frozen=True)
@@ -981,6 +988,15 @@ def quiet_driver():
 		crt._dup2(saved, 2)
 		crt._close(saved)
 		kernel32.SetHandleInformation(STDERR_HANDLE, HANDLE_FLAG_PROTECT_FROM_CLOSE, 0)
+
+
+def dongle_error_text(error):
+	"""Explains a LibUSBError from opening the dongle or reading its serial number."""
+	if sys.platform == "linux" and error.errno in LINUX_DONGLE_ERRORS:
+		return LINUX_DONGLE_ERRORS[error.errno]
+	if error.errno in (LIBUSB_ERROR_ACCESS, LIBUSB_ERROR_BUSY):
+		return DONGLE_IN_USE
+	return f"Could not open the dongle. {error}"
 
 
 def list_devices():
@@ -2052,7 +2068,11 @@ def main():
 		parser.error("--alert-mode needs a NOAA weather radio frequency")
 	if args.alert_mode and args.acars:
 		parser.error("--alert-mode cannot be used with --acars")
-	devices = list_devices()
+	try:
+		devices = list_devices()
+	except LibUSBError as error:
+		print(f"error: {dongle_error_text(error)}")
+		return 1
 	if not devices:
 		print("error: No RTL-SDR devices found.")
 		return 1
@@ -2064,7 +2084,11 @@ def main():
 	except OSError as error:
 		print(f"error: Could not open the log file: {error}")
 		return 1
-	receiver = Receiver(device.index, args.frequency, region)
+	try:
+		receiver = Receiver(device.index, args.frequency, region)
+	except LibUSBError as error:
+		print(f"error: {dongle_error_text(error)}")
+		return 1
 	receiver.county = args.county
 	receiver.volume = config.get_int(config.load(), "volume", DEFAULT_VOLUME, 0, MAX_VOLUME)
 	if args.acars:
