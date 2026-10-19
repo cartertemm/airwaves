@@ -698,7 +698,7 @@ class NRSC5:
                 dll_dir = os.add_dll_directory(os.path.dirname(__file__))
                 lib_name = "libnrsc5.dll"
             elif platform.system() == "Linux":
-                lib_name = "libnrsc5.so"
+                lib_name = library_path(NRSC5_LIBRARY)
             elif platform.system() == "Darwin":
                 lib_name = library_path(NRSC5_LIBRARY)
             else:
