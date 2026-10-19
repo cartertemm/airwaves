@@ -39,6 +39,9 @@ a = Analysis(
 # but the packages load them from their own folder, so drop the top-level copy.
 packaged = {os.path.basename(name) for name, _, _ in a.binaries if os.path.dirname(name).endswith(".libs")}
 a.binaries = [entry for entry in a.binaries if os.path.dirname(entry[0]) or entry[0] not in packaged]
+# ALSA loads its sound server plugins from a folder set when it is built, which differs between
+# distributions (Fedora uses /usr/lib64), so a bundled copy finds no sound device. Use the system's.
+a.binaries = [entry for entry in a.binaries if entry[0] != "libasound.so.2"]
 
 exe = EXE(
 	PYZ(a.pure),
