@@ -12,6 +12,13 @@ if sys.platform == "darwin":
 	# At the top level, under the name libnrsc5 links to, so the driver PyInstaller
 	# collects for libnrsc5 and the one sdr loads are a single file.
 	binaries = [(library_path(name), ".") for name in (*RTLSDR_LIBRARIES, NRSC5_LIBRARY)]
+elif sys.platform == "linux":
+	sys.path.insert(0, os.path.join(SPECPATH, "src"))
+	from airwaves.libraries import NRSC5_LIBRARY, RTLSDR_LIBRARIES
+	# build.sh builds the driver into build/rtlsdr-prefix.
+	driver_folder = os.path.join(SPECPATH, "build", "rtlsdr-prefix", "lib")
+	drivers = [os.path.join(driver_folder, name) for name in RTLSDR_LIBRARIES if os.path.exists(os.path.join(driver_folder, name))]
+	binaries = [(path, ".") for path in (*drivers, os.path.join(SPECPATH, "src", "airwaves", NRSC5_LIBRARY))]
 else:
 	dlls = ("libnrsc5.dll", "rtlsdr.dll")
 	binaries = [(os.path.join(SPECPATH, "src", "airwaves", name), "airwaves") for name in dlls]
