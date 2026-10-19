@@ -204,7 +204,6 @@ dependencies = [
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pyaudio" },
     { name = "pyrtlsdr" },
-    { name = "pyrtlsdrlib", marker = "sys_platform == 'linux'" },
     { name = "setuptools" },
 ]
 
@@ -224,7 +223,6 @@ requires-dist = [
     { name = "pyatv", marker = "extra == 'airplay'" },
     { name = "pyaudio" },
     { name = "pyrtlsdr", specifier = "==0.3.0" },
-    { name = "pyrtlsdrlib", marker = "sys_platform == 'linux'" },
     { name = "setuptools", specifier = "<81" },
     { name = "soco", marker = "extra == 'sonos'" },
 ]
@@ -1797,16 +1795,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/13/82/d74c78b7b68d2b741f3973fbc0a56c3c676d5fac055b76e61083e3fd19ba/pyrtlsdr-0.3.0.tar.gz", hash = "sha256:fb3e583ba073b861e8e0bc5e62f66f07365e9147f5d36491de4ad62f23e45362", size = 29209, upload-time = "2023-08-02T19:25:11.683Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5a/a6/618ffd03652253ddd6455a9334e56332b9d5f6afa55197710a533dd91c28/pyrtlsdr-0.3.0-py2.py3-none-any.whl", hash = "sha256:4967df42eb89e6bd70602337ae355c9b1231eb1d517fd8cc30f7b862fd1392f6", size = 26064, upload-time = "2023-08-02T19:25:09.952Z" },
-]
-
-[[package]]
-name = "pyrtlsdrlib"
-version = "0.0.6"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/08/56/2ce3f915cb445d59a2afbc647beee13690f5ad2e6216a94d8a1a846d48e8/pyrtlsdrlib-0.0.6-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:793e66da25d1897bea9c30b569a80e5a7e13f457c55e2f27461f3bc750b003cb", size = 1268443, upload-time = "2026-09-19T18:06:39.442Z" },
-    { url = "https://files.pythonhosted.org/packages/67/7c/58b9e3aa363babff0d9c46bc87592f7df3256c32b361008ffdf2abfe68e1/pyrtlsdrlib-0.0.6-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:22e27322699632f3f0cf619508d85190b4ef366af193997ce014d4a041c98f9e", size = 1350999, upload-time = "2026-09-19T18:06:41.256Z" },
-    { url = "https://files.pythonhosted.org/packages/b7/db/05912563fbc7bffbcf8555c5960cbb0dcbf0ee3f84111b412a48b7426e77/pyrtlsdrlib-0.0.6-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:0b0a965e73a4d6f8794ba76bdd623696136248b49cf842895f0bb485c692e9be", size = 339640, upload-time = "2026-09-19T18:06:42.967Z" },
 ]
 
 [[package]]

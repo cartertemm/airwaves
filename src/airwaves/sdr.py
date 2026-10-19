@@ -32,17 +32,20 @@ else:
 	import select
 	import termios
 	import tty
-if sys.platform == "darwin":
-	from .libraries import RTLSDR_DYLIB, library_path
+	from .libraries import RTLSDR_LIBRARIES, load_library
+
+	if sys.platform == "darwin":
+		DRIVER_MISSING = "The RTL-SDR driver is missing. Install it with: brew install librtlsdr"
+	else:
+		DRIVER_MISSING = "The RTL-SDR driver is missing. Install the librtlsdr0 or librtlsdr2 package (Debian, Ubuntu), or rtl-sdr (other distributions)."
 
 	def load_driver():
-		try:
-			return ctypes.CDLL(library_path(RTLSDR_DYLIB))
-		except OSError:
-			# With None, pyrtlsdr searches on its own and then says that librtlsdr is missing.
-			return None
+		driver = load_library(RTLSDR_LIBRARIES)
+		if driver is None:
+			raise ImportError(DRIVER_MISSING)
+		return driver
 
-	# pyrtlsdr does not search Homebrew or the app bundle. It asks pyrtlsdrlib for the driver before it searches, so we stand in for that package.
+	# pyrtlsdr does not search Homebrew or the app bundle, and does not know the names distros give the driver. It asks pyrtlsdrlib for the driver before it searches, so we stand in for that package.
 	sys.modules["pyrtlsdrlib"] = types.SimpleNamespace(load_librtlsdr=load_driver)
 from rtlsdr import RtlSdr
 from rtlsdr.librtlsdr import librtlsdr

@@ -8,10 +8,10 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 # only imported when casting, so PyInstaller cannot find them alone.
 if sys.platform == "darwin":
 	sys.path.insert(0, os.path.join(SPECPATH, "src"))
-	from airwaves.libraries import NRSC5_DYLIB, RTLSDR_DYLIB, library_path
+	from airwaves.libraries import NRSC5_LIBRARY, RTLSDR_LIBRARIES, library_path
 	# At the top level, under the name libnrsc5 links to, so the driver PyInstaller
 	# collects for libnrsc5 and the one sdr loads are a single file.
-	binaries = [(library_path(name), ".") for name in (RTLSDR_DYLIB, NRSC5_DYLIB)]
+	binaries = [(library_path(name), ".") for name in (*RTLSDR_LIBRARIES, NRSC5_LIBRARY)]
 else:
 	dlls = ("libnrsc5.dll", "rtlsdr.dll")
 	binaries = [(os.path.join(SPECPATH, "src", "airwaves", name), "airwaves") for name in dlls]
