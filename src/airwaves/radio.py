@@ -429,8 +429,7 @@ class Radio:
 			self.scanning = False
 		if found is None and self.receiver.running:
 			self.message("No other station found.")
-		else:
-			self.notify_status()
+		self.notify_status()
 
 	def step_hd(self, direction):
 		"""Moves through analog, HD1, HD2, and so on: forward for direction 1, back for -1."""

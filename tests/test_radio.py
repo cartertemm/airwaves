@@ -64,6 +64,7 @@ def test_seek_shows_scanning_then_no_station(receiver):
 	assert statuses[0].scanning
 	assert messages == ["No other station found."]
 	assert not radio.status().scanning
+	assert not statuses[-1].scanning
 
 
 def test_select_hd_starts_hd_and_plays_the_program(receiver):
