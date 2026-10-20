@@ -1,6 +1,8 @@
 import asyncio
 import base64
 import re
+import socket
+import threading
 
 import pytest
 
@@ -163,3 +165,38 @@ def test_page_files_are_served(receiver):
 			assert response.status == 200
 			assert response.content_type == content_type
 	serve(receiver, check)
+
+
+@pytest.mark.parametrize("value", ["Infinity", "NaN"])
+def test_numbers_must_be_finite(receiver, value):
+	async def check(client, radio):
+		response = await client.post("/api/volume", data=f'{{"percent": {value}}}', headers={"Content-Type": "application/json"})
+		assert response.status == 400
+	serve(receiver, check)
+
+
+def test_run_does_not_start_when_the_port_is_taken(receiver, capsys):
+	calls = []
+	receiver.start = lambda: calls.append("start")
+	receiver.stop = lambda: calls.append("stop")
+	with socket.socket() as taken:
+		taken.bind((web.HOST, 0))
+		taken.listen()
+		assert web.run(Radio(receiver), taken.getsockname()[1]) is False
+	assert calls == ["stop"]
+	assert "Could not start the web server" in capsys.readouterr().out
+
+
+def test_run_starts_after_binding_and_stops_when_the_receiver_stops(receiver):
+	calls = []
+	receiver.start = lambda: calls.append("start")
+	receiver.stop = lambda: calls.append("stop")
+	receiver.has_sound_card = False
+	radio = Radio(receiver)
+	with socket.socket() as probe:
+		probe.bind((web.HOST, 0))
+		port = probe.getsockname()[1]
+	threading.Timer(0.3, lambda: setattr(receiver, "running", False)).start()
+	assert web.run(radio, port) is True
+	assert calls == ["start", "stop"]
+	assert radio.browser_stream is None

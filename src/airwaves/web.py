@@ -7,6 +7,7 @@ import contextlib
 import dataclasses
 import hmac
 import json
+import math
 import os
 import socket
 from concurrent.futures import ThreadPoolExecutor
@@ -47,7 +48,7 @@ def event_bytes(name, data):
 
 def number(body, key):
 	value = body.get(key)
-	if isinstance(value, bool) or not isinstance(value, (int, float)):
+	if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
 		raise ValueError(f"{key} must be a number.")
 	return value
 
@@ -164,7 +165,8 @@ class WebServer:
 				listener.put_nowait(None)
 
 	async def cleaned_up(self, app):
-		self.worker.shutdown(wait=False, cancel_futures=True)
+		"""Drops queued commands and waits for the running one, so it cannot start a cast after Radio.close."""
+		await asyncio.get_running_loop().run_in_executor(None, partial(self.worker.shutdown, wait=True, cancel_futures=True))
 
 	@aioweb.middleware
 	async def check_password(self, request, handler):
@@ -318,14 +320,21 @@ class WebServer:
 		except Exception as error:
 			self.radio.message(f"error: {error}")
 
-	async def serve(self, port):
+	async def serve(self, port, startup):
+		"""Serves until the receiver stops. Returns False if the port cannot be used. startup runs on the worker once the port is bound."""
 		runner = aioweb.AppRunner(self.make_app())
 		await runner.setup()
 		try:
-			await aioweb.TCPSite(runner, HOST, port).start()
+			try:
+				await aioweb.TCPSite(runner, HOST, port).start()
+			except OSError as error:
+				print(f"error: Could not start the web server on port {port}: {error}")
+				return False
 			print(f"Open http://{lan_address()}:{port} in a browser. Press Ctrl+C to quit.")
+			await asyncio.get_running_loop().run_in_executor(self.worker, startup)
 			while self.radio.receiver.running:
 				await asyncio.sleep(RUNNING_CHECK_SECONDS)
+			return True
 		finally:
 			await runner.cleanup()
 
@@ -336,21 +345,21 @@ def run(radio, port, password=None, sonos=None, airplay=None):
 	Returns False if the server could not start, for example because the port is in use."""
 	receiver = radio.receiver
 	server = WebServer(radio, password)
-	if not receiver.has_sound_card:
-		radio.set_output(BROWSERS)
-	receiver.start()
-	for kind, name in (("sonos", sonos), ("airplay", airplay)):
-		if name:
-			targets = radio.cast_targets((kind,), name)
-			if targets:
-				radio.set_output(targets[0])
+
+	def startup():
+		if not receiver.has_sound_card:
+			radio.set_output(BROWSERS)
+		receiver.start()
+		for kind, name in (("sonos", sonos), ("airplay", airplay)):
+			if name:
+				targets = radio.cast_targets((kind,), name)
+				if targets:
+					radio.set_output(targets[0])
+
 	try:
 		with contextlib.suppress(KeyboardInterrupt):
-			asyncio.run(server.serve(port))
-	except OSError as error:
-		print(f"error: Could not start the web server on port {port}: {error}")
-		return False
+			return asyncio.run(server.serve(port, startup))
+		return True
 	finally:
 		radio.close()
 		receiver.stop()
-	return True
