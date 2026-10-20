@@ -121,6 +121,8 @@ class WebServer:
 		self.worker = ThreadPoolExecutor(max_workers=1)
 		self.listeners = set()
 		self.speakers = []
+		# Read once here and after preset commands. Reading airwaves.conf for each status event could catch a save half written.
+		self.presets = radio.presets()
 		self.loop = None
 		self.status_pending = False
 		self.stopping = False
@@ -130,8 +132,8 @@ class WebServer:
 			"seek": lambda body: partial(radio.seek, direction(body)),
 			"band": lambda body: partial(radio.tune_band, text(body, "name")),
 			"hd": lambda body: partial(radio.select_hd, hd_program(body)),
-			"preset": lambda body: partial(radio.choose_preset, whole_number(body, "number")),
-			"save_preset": lambda body: radio.save_preset,
+			"preset": lambda body: partial(self.update_presets, partial(radio.choose_preset, whole_number(body, "number"))),
+			"save_preset": lambda body: partial(self.update_presets, radio.save_preset),
 			"volume": lambda body: partial(radio.set_volume, round(number(body, "percent"))),
 			"mute": lambda body: partial(radio.set_muted, flag(body, "muted")),
 			"pause": lambda body: partial(radio.set_paused, flag(body, "paused")),
@@ -201,6 +203,12 @@ class WebServer:
 			self.radio.message(f"Found {count} speaker{'' if count == 1 else 's'}.")
 		self.radio.notify_status()
 
+	def update_presets(self, action):
+		"""Runs action on the worker, then reads the presets again, which it or another program may have changed."""
+		action()
+		self.presets = self.radio.presets()
+		self.radio.notify_status()
+
 	def state(self):
 		radio = self.radio
 		receiver = radio.receiver
@@ -212,7 +220,7 @@ class WebServer:
 		return {
 			**dataclasses.asdict(status),
 			"bands": [{"name": band.name, "min_mhz": band.min_mhz, "max_mhz": band.max_mhz, "step_mhz": band.step_mhz, "hd": band.hd} for band in receiver.bands],
-			"presets": [{"number": number, "label": label, "available": available} for number, label, available in radio.presets()],
+			"presets": [{"number": number, "label": label, "available": available} for number, label, available in self.presets],
 			"outputs": outputs,
 			"has_sound_card": receiver.has_sound_card,
 		}

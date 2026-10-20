@@ -9,7 +9,7 @@ import pytest
 pytest.importorskip("aiohttp")
 from aiohttp.test_utils import TestClient, TestServer
 
-from airwaves import web
+from airwaves import config, web
 from airwaves.radio import BROWSERS, Radio
 
 WAIT_STEP_SECONDS = 0.01
@@ -201,3 +201,21 @@ def test_run_starts_after_binding_and_stops_when_the_receiver_stops(receiver):
 	assert web.run(radio, port) is True
 	assert calls == ["start", "stop"]
 	assert radio.browser_stream is None
+
+
+def test_presets_are_read_again_only_after_preset_commands(receiver):
+	async def presets(client):
+		state = await (await client.get("/api/state")).json()
+		return [preset["label"] for preset in state["presets"]]
+
+	async def check(client, radio):
+		config.save("1", "101.1", config.PRESETS)
+		assert await presets(client) == []
+		response = await client.post("/api/save_preset", json={})
+		assert response.status == 202
+		for _ in range(round(WAIT_SECONDS / WAIT_STEP_SECONDS)):
+			if await presets(client) == ["101.1 MHz", "97.9 MHz"]:
+				return
+			await asyncio.sleep(WAIT_STEP_SECONDS)
+		raise AssertionError("The presets were not read again.")
+	serve(receiver, check)
