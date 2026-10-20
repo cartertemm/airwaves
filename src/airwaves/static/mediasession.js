@@ -3,8 +3,8 @@
 export function bindMediaSession(radio, { mediaSession = globalThis.navigator?.mediaSession, MediaMetadataClass = globalThis.MediaMetadata } = {}) {
 	if (!mediaSession || !MediaMetadataClass) return () => {}
 	const actions = {
-		play: () => radio.togglePause(),
-		pause: () => radio.togglePause(),
+		play: () => radio.play(),
+		pause: () => radio.pause(),
 		previoustrack: () => radio.seek(-1),
 		nexttrack: () => radio.seek(1),
 	}

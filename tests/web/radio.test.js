@@ -124,6 +124,34 @@ test('in the browser, play, mute, and volume act on the audio element', () => {
 	assert.deepEqual(posts, [])
 })
 
+test('play and pause act only when needed, in the browser and on the server', () => {
+	const { radio, handlers, posts, player } = setUp()
+	handlers.onStatus(status({ output: 'browsers' }))
+	radio.pause()
+	assert.equal(player.listening, false)
+	radio.play()
+	radio.play()
+	assert.equal(player.listening, true)
+	radio.pause()
+	radio.pause()
+	assert.equal(player.listening, false)
+	handlers.onStatus(status({ output: 'local' }))
+	radio.play()
+	assert.deepEqual(posts, [])
+	radio.pause()
+	radio.pause()
+	radio.play()
+	radio.play()
+	assert.deepEqual(posts, [['pause', { paused: true }], ['pause', { paused: false }]])
+})
+
+test('the browser pausing the audio is not spoken', () => {
+	const { handlers, spoken, player } = setUp()
+	handlers.onStatus(status({ output: 'browsers' }))
+	player.onStopped('paused')
+	assert.deepEqual(spoken, [])
+})
+
 test('quick repeat presses of pause and mute on the server send the new value each time', () => {
 	const { radio, handlers, posts } = setUp()
 	handlers.onStatus(status())

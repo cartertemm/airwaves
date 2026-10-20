@@ -11,7 +11,7 @@ function canSetVolume(audio) {
 	return works
 }
 
-/** Assign onStopped(reason) to hear when listening ends by itself: 'failed' if the browser refused to play, 'stopped' if the stream ended. */
+/** Assign onStopped(reason) to hear when listening ends by itself: 'failed' if the browser refused to play, 'stopped' if the stream ended, 'paused' if the browser or the system paused the audio. */
 export function createPlayer({ audio }) {
 	let listening = false
 	// Each start gets a new token, so a late refusal from an older play() is ignored.
@@ -60,6 +60,12 @@ export function createPlayer({ audio }) {
 		player.stop()
 		player.onStopped?.('stopped')
 	}
+	audio.addEventListener('pause', () => {
+		if (!listening) return
+		listening = false
+		token++
+		player.onStopped?.('paused')
+	})
 	audio.addEventListener('error', streamStopped)
 	audio.addEventListener('ended', streamStopped)
 	return player

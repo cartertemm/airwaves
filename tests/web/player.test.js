@@ -60,3 +60,18 @@ test('a refused play reports failed, but an aborted one does not', async () => {
 	await new Promise(resolve => setTimeout(resolve, 0))
 	assert.deepEqual(reasons, ['failed'])
 })
+
+test('the browser pausing the audio while listening reports paused, but stop does not', () => {
+	const audio = fakeAudio()
+	const player = createPlayer({ audio })
+	const reasons = []
+	player.onStopped = reason => reasons.push(reason)
+	player.start()
+	audio.fire('pause')
+	assert.equal(player.listening, false)
+	assert.deepEqual(reasons, ['paused'])
+	player.start()
+	player.stop()
+	audio.fire('pause')
+	assert.deepEqual(reasons, ['paused'])
+})

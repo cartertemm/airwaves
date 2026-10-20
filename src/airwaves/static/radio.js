@@ -90,7 +90,7 @@ export function createRadio({ api, player, sfx, speak, storage }) {
 	}
 
 	player.onStopped = reason => {
-		speak(reason === 'failed' ? say.playFailedLine() : say.streamStoppedLine(), true)
+		if (reason !== 'paused') speak(reason === 'failed' ? say.playFailedLine() : say.streamStoppedLine(), true)
 		changed()
 	}
 
@@ -118,15 +118,22 @@ export function createRadio({ api, player, sfx, speak, storage }) {
 		canSetVolume: () => !inBrowser() || player.volumeWorks,
 
 		togglePause() {
-			if (!status) return
+			if (status) radio.setPaused(radio.isPlaying())
+		},
+		play() {
+			if (status && !radio.isPlaying()) radio.setPaused(false)
+		},
+		pause() {
+			if (status && radio.isPlaying()) radio.setPaused(true)
+		},
+		setPaused(paused) {
 			if (inBrowser()) {
-				if (player.listening) player.stop()
+				if (paused) player.stop()
 				else player.start()
-				speak(say.pauseLine(!player.listening))
+				speak(say.pauseLine(paused))
 				changed()
 				return
 			}
-			const paused = !status.paused
 			send('pause', { paused })
 			speak(say.pauseLine(paused))
 			status = { ...status, paused }
