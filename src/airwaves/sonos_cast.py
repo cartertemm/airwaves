@@ -114,13 +114,15 @@ class StreamHandler(BaseHTTPRequestHandler):
 class StreamServer:
 	"""Serves a Receiver's audio as a live MP3 stream over HTTP, with the station and RDS text as its title.
 
-	With hold_new_connections, new connections get silence until release() moves them to the live stream."""
+	With hold_new_connections, new connections get silence until release() moves them to the live stream. With serve_http=False it only encodes, and another server adds clients: objects with put_nowait(data). read_audio replaces receiver.read_audio as the source."""
 
-	def __init__(self, receiver, audio_rate, host, hold_new_connections=False):
+	def __init__(self, receiver, audio_rate, host, hold_new_connections=False, serve_http=True, read_audio=None):
 		self.receiver = receiver
+		self.read_audio = read_audio or receiver.read_audio
 		self.audio_rate = audio_rate
 		self.host = host
 		self.hold_new_connections = hold_new_connections
+		self.serve_http = serve_http
 		self.clients = set()
 		self.pending = set()
 		self.clients_lock = threading.Lock()
@@ -129,17 +131,21 @@ class StreamServer:
 	def start(self):
 		self.running = True
 		self.silence = silent_chunk(self.audio_rate)
-		self.server = ThreadingHTTPServer((self.host, 0), StreamHandler)
-		self.server.daemon_threads = True
-		self.server.stream = self
-		self.address = f"{self.host}:{self.server.server_address[1]}/stream/"
-		for target in (self.server.serve_forever, self.encode):
+		targets = [self.encode]
+		if self.serve_http:
+			self.server = ThreadingHTTPServer((self.host, 0), StreamHandler)
+			self.server.daemon_threads = True
+			self.server.stream = self
+			self.address = f"{self.host}:{self.server.server_address[1]}/stream/"
+			targets.append(self.server.serve_forever)
+		for target in targets:
 			threading.Thread(target=target, daemon=True).start()
 
 	def stop(self):
 		self.running = False
-		self.server.shutdown()
-		self.server.server_close()
+		if self.serve_http:
+			self.server.shutdown()
+			self.server.server_close()
 
 	def add_client(self, client):
 		with self.clients_lock:
@@ -167,7 +173,7 @@ class StreamServer:
 		frames = round(self.audio_rate * CHUNK_SECONDS)
 		next_time = time.monotonic()
 		while self.running:
-			audio = self.receiver.read_audio(frames)
+			audio = self.read_audio(frames)
 			data = bytes(encoder.encode((np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes()))
 			with self.clients_lock:
 				sends = [(client, data) for client in self.clients] + [(client, self.silence) for client in self.pending]
@@ -197,8 +203,10 @@ class Caster:
 		self.running = False
 		self.position = None
 		self.status = (False, False)
+		self.volume_percent = 0
 
 	def start(self):
+		self.volume_percent = self.coordinator.group.volume
 		self.play_mode = self.coordinator.play_mode
 		self.running = True
 		self.stream.start()
@@ -231,7 +239,7 @@ class Caster:
 		"""Called with 1 or -1 when a Sonos skip button is pressed."""
 
 	def on_change(self):
-		"""Called when Sonos is paused, resumed, muted, or unmuted."""
+		"""Called when Sonos is paused, resumed, muted, unmuted, or its volume changes."""
 
 	def on_lost(self):
 		"""Called when the group switches to another source. Polling has stopped; call stop(release=False) to leave Sonos alone."""
@@ -252,6 +260,7 @@ class Caster:
 			track = self.coordinator.get_current_track_info()
 			state = self.coordinator.get_current_transport_info()["current_transport_state"]
 			muted = self.coordinator.group.mute
+			volume = self.coordinator.group.volume
 		except Exception:
 			# Sonos did not answer this time. Ask again on the next poll.
 			return
@@ -270,8 +279,9 @@ class Caster:
 			self.on_skip(1 if (position - self.position) % QUEUE_COPIES == 1 else -1)
 		self.position = position
 		status = (state == "PAUSED_PLAYBACK", muted)
-		if status != self.status:
+		if status != self.status or volume != self.volume_percent:
 			self.status = status
+			self.volume_percent = volume
 			self.on_change()
 
 	@property
@@ -297,8 +307,10 @@ class Caster:
 
 	@property
 	def volume(self):
-		return self.coordinator.group.volume
+		"""The group volume as of the last poll, so reading it does not wait for Sonos."""
+		return self.volume_percent
 
 	@volume.setter
 	def volume(self, percent):
-		self.coordinator.group.volume = min(100, max(0, percent))
+		self.volume_percent = min(100, max(0, percent))
+		self.coordinator.group.volume = self.volume_percent

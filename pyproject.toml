@@ -23,6 +23,9 @@ sonos = [
 airplay = [
 	"pyatv",
 ]
+web = [
+	"aiohttp",
+]
 
 [project.scripts]
 sdr = "airwaves.sdr:main"

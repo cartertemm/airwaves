@@ -16,7 +16,6 @@ import threading
 import time
 import types
 from dataclasses import dataclass, replace
-from functools import partial
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -51,8 +50,7 @@ from rtlsdr import RtlSdr
 from rtlsdr.librtlsdr import librtlsdr
 from rtlsdr.rtlsdr import LibUSBError
 
-from . import config, flight_log, nrsc5
-from .recorder import Recorder
+from . import config, nrsc5
 
 VERSION = "0.3"
 VERSION_TEXT = f"SDR Tuner version {VERSION}"
@@ -194,6 +192,9 @@ KEY_POLL_SECONDS = 0.02
 HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "P: save preset", "p: choose preset", "m: mute", "i: show/hide signal", "d: next HD channel", "D: previous HD channel", "a: ACARS on/off", "c: cast to Sonos or AirPlay", "r: record on/off", "h: help", "Ctrl+C: quit")
 HELP_KEYS_PER_LINE = 3
 CAST_KINDS = ("sonos", "airplay")
+DEFAULT_WEB_PORT = 8000
+MIN_PORT = 1
+MAX_PORT = 65535
 RECORD_FORMATS = ("wav", "mp3")
 ACARS_LOG_NAME = "flights.log"
 RECORD_TIME_FORMAT = "%Y-%m-%d %H-%M-%S"
@@ -241,6 +242,7 @@ class Band:
 	hd: bool = False
 	# Channels decoded as ACARS. The capture centers between the lowest and highest.
 	acars_channels: tuple = ()
+	name: str = ""
 
 	def format(self, freq_mhz):
 		return f"{freq_mhz * 1000:.0f} kHz" if self.khz else f"{freq_mhz:.{self.digits}f} MHz"
@@ -256,12 +258,12 @@ class Band:
 		return round((self.min_mhz + self.max_mhz) / 2 * 1e6)
 
 
-FM = Band(min_mhz=87.5, max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6, hd=True)
-NOAA = Band(min_mhz=162.4, max_mhz=162.55, step_mhz=0.025, digits=3, max_deviation=5000, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, alerts=True)
-AM = Band(min_mhz=0.53, max_mhz=1.7, step_mhz=0.01, digits=2, max_deviation=None, narrow_cutoff=5000, audio_cutoff=5000, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13, khz=True)
+FM = Band(name="FM", min_mhz=87.5, max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6, hd=True)
+NOAA = Band(name="Weather", min_mhz=162.4, max_mhz=162.55, step_mhz=0.025, digits=3, max_deviation=5000, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, alerts=True)
+AM = Band(name="AM", min_mhz=0.53, max_mhz=1.7, step_mhz=0.01, digits=2, max_deviation=None, narrow_cutoff=5000, audio_cutoff=5000, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13, khz=True)
 # Direct sampling stops at 14.4 MHz, half of the dongle's 28.8 MHz converter rate.
-SW = Band(min_mhz=2.3, max_mhz=14.4, step_mhz=0.005, digits=3, max_deviation=None, narrow_cutoff=4500, audio_cutoff=4500, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13)
-AIR = Band(min_mhz=118.0, max_mhz=136.975, step_mhz=0.025, digits=3, max_deviation=None, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, am=True)
+SW = Band(name="Shortwave", min_mhz=2.3, max_mhz=14.4, step_mhz=0.005, digits=3, max_deviation=None, narrow_cutoff=4500, audio_cutoff=4500, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13)
+AIR = Band(name="Aviation", min_mhz=118.0, max_mhz=136.975, step_mhz=0.025, digits=3, max_deviation=None, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, am=True)
 # Europe uses 50 microsecond de-emphasis, a 9 kHz AM channel grid, and has no NOAA weather radio.
 FM_EU = replace(FM, deemphasis_tau=50e-6)
 AM_EU = replace(AM, min_mhz=0.531, max_mhz=1.602, step_mhz=0.009)
@@ -1049,7 +1051,12 @@ class Receiver:
 		self.reset_hd()
 		self.running = True
 		self.audio = pyaudio.PyAudio()
-		self.stream = self.audio.open(format=pyaudio.paFloat32, channels=2, rate=AUDIO_RATE, output=True, stream_callback=self.fill_audio)
+		try:
+			self.stream = self.audio.open(format=pyaudio.paFloat32, channels=2, rate=AUDIO_RATE, output=True, stream_callback=self.fill_audio)
+		except OSError:
+			# A headless computer may have no sound card. Casting and the web frontend still work.
+			self.audio.terminate()
+			self.audio = self.stream = None
 		self.tune(freq_mhz)
 		self.threads = [threading.Thread(target=self.guard, args=(target,), daemon=True) for target in (self.read, self.demodulate)]
 
@@ -1337,12 +1344,18 @@ class Receiver:
 		return (audio * gain).tobytes(), pyaudio.paContinue
 
 	@property
+	def has_sound_card(self):
+		return self.stream is not None
+
+	@property
 	def local_audio(self):
-		"""Whether the audio plays on this computer's sound card."""
-		return self.stream.is_active()
+		"""Whether the audio plays on this computer's sound card. Always False without one."""
+		return self.has_sound_card and self.stream.is_active()
 
 	@local_audio.setter
 	def local_audio(self, enabled):
+		if not self.has_sound_card:
+			return
 		if enabled:
 			self.stream.start_stream()
 		else:
@@ -1402,9 +1415,10 @@ class Receiver:
 		with self.sdr_lock:
 			if self.hd:
 				self.close_hd()
-		self.stream.stop_stream()
-		self.stream.close()
-		self.audio.terminate()
+		if self.has_sound_card:
+			self.stream.stop_stream()
+			self.stream.close()
+			self.audio.terminate()
 		if self.sdr:
 			self.sdr.close()
 
@@ -1514,220 +1528,41 @@ def band_ranges(bands):
 	return " or ".join(f"{band.min_mhz} to {band.max_mhz}" for band in bands)
 
 
+def describe_device(device):
+	return f"{device.name} (serial {device.serial})"
+
+
 def choose_device(devices):
 	if len(devices) == 1:
 		return devices[0]
-	index = menu("Choose a device (blank to cancel): ", [f"{device.name} (serial {device.serial})" for device in devices])
+	index = menu("Choose a device (blank to cancel): ", [describe_device(device) for device in devices])
 	return None if index is None else devices[index]
 
 
-PRESET_PATTERN = re.compile(r"(\d+(?:\.\d+)?)(?:\s+HD(\d+))?", re.IGNORECASE)
-
-
-@dataclass(frozen=True)
-class Preset:
-	"""A saved station: a frequency, and the HD channel (0 is HD1) or None for analog."""
-	freq_mhz: float
-	hd_program: int = None
-
-	@classmethod
-	def parse(cls, text):
-		"""Returns the Preset written as text, like "97.9" or "99.9 HD2", or None if text is not one."""
-		match = PRESET_PATTERN.fullmatch(text.strip())
-		if match is None:
-			return None
-		program = int(match.group(2)) - 1 if match.group(2) else None
-		if program is not None and program < 0:
-			return None
-		return cls(float(match.group(1)), program)
-
-	def text(self):
-		frequency = f"{self.freq_mhz:.4f}".rstrip("0").rstrip(".")
-		return frequency if self.hd_program is None else f"{frequency} HD{self.hd_program + 1}"
-
-	def describe(self, bands):
-		"""Returns the preset for a menu, in the band's own format, or marked not available outside the bands."""
-		band = band_for(self.freq_mhz, bands)
-		if band is None:
-			return f"{self.text()} (not available)"
-		frequency = band.format(self.freq_mhz)
-		return frequency if self.hd_program is None else f"{frequency} HD{self.hd_program + 1}"
-
-
 class RadioCLI:
-	"""Keyboard controls and a status line for a Receiver."""
+	"""Keyboard controls and a status line for a Radio."""
 
-	def __init__(self, receiver, alert_mode=False, sonos=None, airplay=None, log=None, record_format="mp3", record_dir="."):
-		self.receiver = receiver
-		self.receiver.on_status_change = self.show_status
-		self.receiver.on_alert = self.announce_alert
-		self.receiver.on_acars = self.announce_acars
-		self.acars_count = 0
-		self.log = log
-		self.record_format = record_format
-		self.record_dir = record_dir
-		self.recorder = None
-		self.record_log = None
-		self.alert_mode = alert_mode
-		self.waiting_for_alert = alert_mode
-		if alert_mode:
-			receiver.muted = True
+	def __init__(self, radio, sonos=None, airplay=None):
+		self.radio = radio
+		radio.on_status = self.show_status
+		radio.on_message = self.show_message
 		self.sonos = sonos
 		self.airplay = airplay
-		self.caster = None
 		self.display_lock = threading.Lock()
 		self.prompting = False
 		self.show_signal = False
 
-	@property
-	def output(self):
-		"""Where the sound goes, with volume, muted, and paused: the Sonos group while casting, otherwise this computer."""
-		return self.caster or self.receiver
-
-	def announce_alert(self, alert):
-		if self.waiting_for_alert:
-			self.waiting_for_alert = False
-			self.receiver.muted = False
-			if self.caster:
-				self.caster.paused = False
-		self.show_message(alert.describe())
-
-	def announce_acars(self, message):
-		if not message.text.strip():
-			return
-		self.acars_count += 1
-		try:
-			line = flight_log.describe(message)
-		except Exception:
-			# ACARS text has no fixed format, so show the message as sent rather than lose it.
-			line = message.describe()
-		self.show_message(line)
-		entry = f"{line}\n\t{message.describe()}\n"
-		if self.log:
-			self.log.write(entry)
-			self.log.flush()
-		log = self.record_log
-		if log:
-			try:
-				log.write(entry)
-				log.flush()
-			except ValueError:
-				# The r key closed the log on the main thread while this message arrived.
-				pass
-			except OSError as error:
-				self.record_log = None
-				with contextlib.suppress(OSError):
-					log.close()
-				self.show_message(f"error: Recording stopped: {error}")
-
-	def toggle_acars(self):
-		receiver = self.receiver
-		if receiver.acars_active:
-			receiver.acars_stop()
-			return
-		self.announce_leaving_hd()
-		self.acars_count = 0
-		receiver.acars_start()
-		channels = ", ".join(f"{freq_mhz:.3f}" for freq_mhz in receiver.band.acars_channels)
-		self.show_message(f"Decoding ACARS on {channels} MHz. No sound plays.")
-
-	def toggle_record(self):
-		if self.recorder:
-			recorder, self.recorder = self.recorder, None
-			self.receiver.on_audio = None
-			recorder.close()
-			self.show_message(f"Saved {recorder.path}")
-		elif self.record_log:
-			log, self.record_log = self.record_log, None
-			with contextlib.suppress(OSError):
-				log.close()
-			self.show_message(f"Saved {log.name}")
-		elif self.receiver.acars_active:
-			path = os.path.join(self.record_dir, ACARS_LOG_NAME)
-			try:
-				self.record_log = open(path, "a", encoding="utf-8")
-			except OSError as error:
-				self.show_message(f"error: Could not open the log file: {error}")
-				return
-			self.show_message(f"Logging ACARS to {path}")
-		else:
-			frequency = self.receiver.band.format(self.receiver.freq_mhz).replace(" ", "")
-			name = f"{datetime.now().strftime(RECORD_TIME_FORMAT)} {frequency}.{self.record_format}"
-			path = os.path.join(self.record_dir, name)
-			try:
-				recorder = Recorder(path, AUDIO_RATE, self.record_format == "mp3")
-			except OSError as error:
-				self.show_message(f"error: Could not open the recording: {error}")
-				return
-			recorder.on_error = self.lose_recording
-			self.recorder = recorder
-			self.receiver.on_audio = recorder.write
-			self.show_message(f"Recording {path}")
-
-	def lose_recording(self, error):
-		"""Runs on the recorder thread when a write fails."""
-		self.receiver.on_audio = None
-		self.recorder = None
-		self.show_message(f"error: Recording stopped: {error}")
-
-	def cast_targets(self, kinds):
-		"""Returns (label, names, make caster) for each Sonos group and AirPlay device found, sorted so the same room sits together.
-
-		Each kind needs its extra packages. A kind whose packages are missing finds nothing."""
-		targets = []
-		if "sonos" in kinds:
-			try:
-				from . import sonos_cast
-				groups = sonos_cast.find_groups()
-			except ImportError:
-				groups = []
-			targets += [(f"{sonos_cast.group_label(group)} (Sonos)", [member.player_name for member in group.members], partial(sonos_cast.Caster, self.receiver, group, AUDIO_RATE)) for group in groups]
-		if "airplay" in kinds:
-			try:
-				from . import airplay_cast
-				devices = airplay_cast.find_devices()
-			except ImportError:
-				devices = []
-			targets += [(f"{device.name} (AirPlay)", [device.name], partial(airplay_cast.AirPlayCaster, self.receiver, device, AUDIO_RATE)) for device in devices]
-		return sorted(targets, key=lambda target: target[0].lower())
-
 	def start_cast(self, kinds=CAST_KINDS, name=None):
-		targets = self.cast_targets(kinds)
-		if name:
-			targets = [target for target in targets if name.lower() in (target_name.lower() for target_name in target[1])]
+		targets = self.radio.cast_targets(kinds, name)
 		if not targets:
-			self.show_message(f"error: No speaker named {name}." if name else "error: No speakers found. Sonos needs the sonos extra and AirPlay the airplay extra.")
 			return
 		index = 0
 		if len(targets) > 1:
-			index = self.prompt(lambda: menu("Cast to (blank to cancel): ", [label for label, names, make in targets]))
+			index = self.prompt(lambda: menu("Cast to (blank to cancel): ", [target.label for target in targets]))
 			if index is None:
 				self.show_status()
 				return
-		label, names, make = targets[index]
-		try:
-			caster = make()
-			caster.on_skip = self.seek
-			caster.on_change = self.show_status
-			caster.on_lost = self.cast_lost
-			caster.start()
-		except Exception as error:
-			self.show_message(f"error: Could not cast to {label}: {error}")
-			return
-		self.caster = caster
-		if self.waiting_for_alert:
-			caster.paused = True
-		self.show_message(f"Casting to {label}")
-
-	def stop_cast(self):
-		caster, self.caster = self.caster, None
-		caster.stop()
-		self.show_message("Stopped casting. Playing here again.")
-
-	def cast_lost(self):
-		caster, self.caster = self.caster, None
-		caster.stop(release=False)
-		self.show_message(f"{caster.kind}: {caster.name} stopped playing the radio. Playing here again.")
+		self.radio.start_cast(targets[index])
 
 	def watch_media_keys(self):
 		"""Scans when the keyboard's Previous Track or Next Track key is pressed, even when another window has focus."""
@@ -1741,38 +1576,33 @@ class RadioCLI:
 		message = wintypes.MSG()
 		while user32.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
 			if message.message == WM_HOTKEY:
-				self.seek(directions[message.wParam])
+				self.radio.seek(directions[message.wParam])
 
 	def status_text(self):
-		receiver = self.receiver
-		output = self.output
-		frequency = receiver.band.format(receiver.freq_mhz)
-		signal = f"Signal {receiver.signal_db} dB" if self.show_signal else ""
-		name = receiver.rds_name
-		lost = False
-		if receiver.hd_active:
-			program, mer = receiver.hd_program, receiver.hd_mer
-			frequency += " HD" if program is None else f" HD{program + 1} of {len(receiver.hd_programs)}"
+		status = self.radio.status()
+		if status.scanning:
+			return "Scanning..."
+		signal = f"Signal {status.signal_db} dB" if self.show_signal else ""
+		if status.hd_active:
+			mer = status.mer
 			signal = f"MER {mer[0]:.1f}/{mer[1]:.1f} dB" if self.show_signal and mer else ""
-			name = receiver.hd_programs.get(program) or name
-			lost = program is not None and not receiver.hd_locked
-		if receiver.acars_active:
-			frequency = f"ACARS {receiver.band.min_mhz:.3f} to {receiver.band.max_mhz:.3f} MHz"
-			signal = f"Messages: {self.acars_count}"
-		parts = [frequency, signal, name]
-		if lost:
+		if status.acars_active:
+			signal = f"Messages: {status.acars_count}"
+		parts = [status.frequency, signal, status.station]
+		if status.hd_lost:
 			parts.append("HD signal lost")
-		if self.caster:
-			parts.append(f"{self.caster.kind}: {self.caster.name}")
-		if self.recorder or self.record_log:
+		caster = self.radio.caster
+		if caster:
+			parts.append(f"{caster.kind}: {caster.name}")
+		if status.recording:
 			parts.append("Recording")
-		if output.muted:
+		if status.muted:
 			parts.append("Muted")
-		if output.paused:
+		if status.paused:
 			parts.append("Paused")
-		parts.append(receiver.rds_text)
-		if receiver.alert and receiver.alert.active():
-			parts.insert(1, f"ALERT: {receiver.alert.name}")
+		parts.append(status.text)
+		if status.alert:
+			parts.insert(1, f"ALERT: {status.alert}")
 		return " | ".join(part for part in parts if part)
 
 	def show_status(self):
@@ -1802,120 +1632,26 @@ class RadioCLI:
 			self.prompting = False
 
 	def prompt_frequency(self):
-		text = self.prompt(lambda: input(f"Frequency in MHz ({band_ranges(self.receiver.bands)}): "))
+		text = self.prompt(lambda: input(f"Frequency in MHz ({band_ranges(self.radio.receiver.bands)}): "))
 		try:
 			freq_mhz = float(text)
 		except ValueError:
 			self.show_message("error: Input must be a number.")
 			return
-		if band_for(freq_mhz, self.receiver.bands) is None:
-			self.show_message("error: Frequency not in range.")
-			return
-		self.announce_leaving_hd()
-		self.receiver.tune(freq_mhz)
-		self.show_status()
-
-	def seek(self, direction):
-		self.announce_leaving_hd()
-		with self.display_lock:
-			sys.stdout.write("\r" + "Scanning...".ljust(60))
-			sys.stdout.flush()
-		if self.receiver.seek(direction) is None and self.receiver.running:
-			self.show_message("No other station found.")
-
-	def step(self, direction):
-		band = band_for(self.receiver.freq_mhz, self.receiver.bands)
-		freq_mhz = self.receiver.freq_mhz + direction * band.step_mhz
-		if band_for(freq_mhz, self.receiver.bands) is band:
-			self.announce_leaving_hd()
-			self.receiver.tune(freq_mhz)
-
-	def announce_leaving_hd(self):
-		if self.receiver.hd_active:
-			self.show_message("Switching back to analog...")
-
-	def step_hd(self, direction):
-		"""Moves through analog, HD1, HD2, and so on: forward for direction 1, back for -1."""
-		receiver = self.receiver
-		if not receiver.band.hd:
-			self.show_message("HD works only on FM.")
-			return
-		if not receiver.hd_active:
-			self.start_hd()
-			return
-		program = receiver.hd_program_step(direction)
-		if program is None:
-			self.show_message("Switching back to analog...")
-			receiver.hd_stop()
-			return
-		receiver.select_hd_program(program)
-		self.show_message(f"HD{program + 1} {receiver.hd_programs.get(program, '')}".strip())
-
-	def start_hd(self):
-		self.show_message("Checking for HD...")
-		try:
-			self.receiver.hd_start()
-		except HdUnavailable as error:
-			self.show_message(f"HD not available: {error}")
-			return
-		except nrsc5.NRSC5Error as error:
-			self.show_message(f"error: Could not start HD: {error}")
-			return
-		threading.Thread(target=self.wait_for_hd_lock, args=(self.receiver.hd,), daemon=True).start()
-
-	def wait_for_hd_lock(self, radio):
-		"""Says when HD locks, or goes back to analog if it does not lock within HD_LOCK_SECONDS. Stops early if this HD session ends."""
-		receiver = self.receiver
-		deadline = time.monotonic() + HD_LOCK_SECONDS
-		while time.monotonic() < deadline:
-			if receiver.hd is not radio:
-				return
-			if receiver.hd_locked:
-				self.show_message("HD found, retrieving channels...")
-				return
-			time.sleep(KEY_POLL_SECONDS)
-		if receiver.hd is radio:
-			receiver.hd_stop()
-			self.show_message(f"No HD on {receiver.band.format(receiver.freq_mhz)}.")
-
-	def save_preset(self):
-		receiver = self.receiver
-		if receiver.acars_active:
-			self.show_message("Cannot save a preset while decoding ACARS.")
-			return
-		current = Preset(receiver.freq_mhz, receiver.hd_program if receiver.hd_active else None)
-		for number, text in config.presets().items():
-			preset = Preset.parse(text)
-			if preset and preset.text() == current.text():
-				self.show_message(f"{current.describe(receiver.bands)} is already preset {number}.")
-				return
-		number = config.next_preset_number()
-		try:
-			config.save(str(number), current.text(), config.PRESETS)
-		except OSError as error:
-			self.show_message(f"Could not save the preset to {config.FILE_NAME}: {error}")
-			return
-		self.show_message(f"{current.describe(receiver.bands)} saved to preset {number}")
+		self.radio.tune(freq_mhz)
 
 	def choose_preset(self):
-		presets = config.presets()
+		presets = self.radio.presets()
 		if not presets:
 			self.show_message("No presets. Press P to save the current station.")
 			return
-		numbers = list(presets)
-		items = []
-		for number in numbers:
-			preset = Preset.parse(presets[number])
-			items.append(f"{number}: " + (preset.describe(self.receiver.bands) if preset else f"{presets[number]} (not available)"))
+		numbers = [number for number, label, available in presets]
+		items = [f"{number}: {label}" for number, label, available in presets]
 		choice = self.prompt(lambda: self.preset_menu(items, numbers))
 		if choice is None:
 			self.show_status()
 			return
-		preset = Preset.parse(presets[choice])
-		if preset is None or band_for(preset.freq_mhz, self.receiver.bands) is None:
-			self.show_message(f"error: Preset {choice} is not available.")
-			return
-		self.tune_preset(preset)
+		self.radio.choose_preset(choice)
 
 	@staticmethod
 	def preset_menu(items, numbers):
@@ -1930,64 +1666,42 @@ class RadioCLI:
 				return int(text)
 			print("error: Not a preset number. Please try again.")
 
-	def tune_preset(self, preset):
-		receiver = self.receiver
-		if receiver.acars_active:
-			receiver.acars_stop()
-		self.announce_leaving_hd()
-		receiver.tune(preset.freq_mhz)
-		if preset.hd_program is None:
-			self.show_status()
-			return
-		self.start_hd()
-		if receiver.hd_active:
-			receiver.select_hd_program(preset.hd_program)
-
-	def change_volume(self, delta):
-		output = self.output
-		output.volume += delta
-		if output is not self.receiver:
-			return
-		try:
-			config.save("volume", output.volume)
-		except OSError as error:
-			self.show_message(f"Could not save the volume to {config.FILE_NAME}: {error}")
-
 	def handle_key(self, key):
-		output = self.output
+		radio = self.radio
+		output = radio.output
 		if key == " ":
-			output.paused = not output.paused
+			radio.set_paused(not output.paused)
 		elif key == "_":
-			self.change_volume(-VOLUME_STEP)
+			radio.change_volume(-VOLUME_STEP)
 		elif key == "+":
-			self.change_volume(VOLUME_STEP)
+			radio.change_volume(VOLUME_STEP)
 		elif key == "s":
-			self.step(-1)
+			radio.step(-1)
 		elif key == "w":
-			self.step(1)
+			radio.step(1)
 		elif key == "S":
-			self.seek(-1)
+			radio.seek(-1)
 		elif key == "W":
-			self.seek(1)
+			radio.seek(1)
 		elif key == "d":
-			self.step_hd(1)
+			radio.step_hd(1)
 			return
 		elif key == "D":
-			self.step_hd(-1)
+			radio.step_hd(-1)
 			return
 		elif key == "m":
-			output.muted = not output.muted
+			radio.set_muted(not output.muted)
 		elif key == "a":
-			self.toggle_acars()
+			radio.toggle_acars()
 			return
 		elif key == "c":
-			if self.caster:
-				self.stop_cast()
+			if radio.caster:
+				radio.stop_cast()
 			else:
 				self.start_cast()
 			return
 		elif key == "r":
-			self.toggle_record()
+			radio.toggle_record()
 			return
 		elif key == "i":
 			self.show_signal = not self.show_signal
@@ -1998,7 +1712,7 @@ class RadioCLI:
 			self.prompt_frequency()
 			return
 		elif key == "P":
-			self.save_preset()
+			radio.save_preset()
 			return
 		elif key == "p":
 			self.choose_preset()
@@ -2006,12 +1720,13 @@ class RadioCLI:
 		self.show_status()
 
 	def run(self):
+		radio = self.radio
 		original_title = get_title()
 		print(HELP_TEXT)
-		if self.alert_mode:
+		if radio.alert_mode:
 			print("Alert mode: the sound stays off until a weather alert arrives.")
 		self.show_status()
-		self.receiver.start()
+		radio.receiver.start()
 		if sys.platform == "win32":
 			threading.Thread(target=self.watch_media_keys, daemon=True).start()
 		if self.sonos is not None:
@@ -2020,7 +1735,7 @@ class RadioCLI:
 			self.start_cast(("airplay",), self.airplay)
 		try:
 			with terminal_mode(line_input=False):
-				while self.receiver.running:
+				while radio.receiver.running:
 					key = read_key()
 					if key is None:
 						time.sleep(KEY_POLL_SECONDS)
@@ -2031,13 +1746,21 @@ class RadioCLI:
 		except KeyboardInterrupt:
 			pass
 		finally:
-			if self.recorder or self.record_log:
-				self.toggle_record()
-			if self.caster:
-				self.caster.stop()
-			self.receiver.stop()
+			radio.close()
+			radio.receiver.stop()
 			set_title(original_title)
 			print()
+
+
+def web_port(text):
+	"""Reads the --web port for argparse."""
+	try:
+		port = int(text)
+	except ValueError:
+		raise argparse.ArgumentTypeError(f"{text} is not a port number") from None
+	if not MIN_PORT <= port <= MAX_PORT:
+		raise argparse.ArgumentTypeError(f"port must be from {MIN_PORT} to {MAX_PORT}")
+	return port
 
 
 def main():
@@ -2054,6 +1777,9 @@ def main():
 	cast = parser.add_mutually_exclusive_group()
 	cast.add_argument("--sonos", nargs="?", const="", metavar="SPEAKER", help="Cast to the Sonos group with this speaker in it. Without a name, choose from a list.")
 	cast.add_argument("--airplay", nargs="?", const="", metavar="DEVICE", help="Cast to this AirPlay device. Without a name, choose from a list.")
+	parser.add_argument("--device", type=int, metavar="N", help="Use the Nth dongle, counting from 1. Without it, choose from a list when there is more than one.")
+	parser.add_argument("--web", nargs="?", type=web_port, const=DEFAULT_WEB_PORT, metavar="PORT", help=f"Control the radio from a browser instead of the keyboard. Default port is {DEFAULT_WEB_PORT}. Needs the web extra.")
+	parser.add_argument("--web-password", metavar="PASSWORD", help="Ask browsers for this password. Needs --web.")
 	args = parser.parse_args()
 	print(VERSION_TEXT)
 	# Library log messages would print over the status line. Without a handler, the first one also turns on console logging for all of them.
@@ -2068,6 +1794,17 @@ def main():
 		parser.error("--alert-mode needs a NOAA weather radio frequency")
 	if args.alert_mode and args.acars:
 		parser.error("--alert-mode cannot be used with --acars")
+	if args.web_password is not None and args.web is None:
+		parser.error("--web-password needs --web")
+	if args.web_password == "":
+		parser.error("--web-password cannot be empty")
+	if args.web is not None and "" in (args.sonos, args.airplay):
+		parser.error("with --web, --sonos and --airplay need a speaker name")
+	if args.web is not None:
+		try:
+			from . import web
+		except ImportError:
+			parser.error("--web needs the web extra: uv sync --extra web")
 	try:
 		devices = list_devices()
 	except LibUSBError as error:
@@ -2076,9 +1813,17 @@ def main():
 	if not devices:
 		print("error: No RTL-SDR devices found.")
 		return 1
-	device = choose_device(devices)
-	if device is None:
-		return 0
+	if args.device is not None or (args.web is not None and len(devices) > 1):
+		if args.device is None or not 1 <= args.device <= len(devices):
+			print("error: Choose a dongle with --device:" if args.device is None else f"error: There is no dongle {args.device}. The dongles are:")
+			for number, device in enumerate(devices, 1):
+				print(f"{number}: {describe_device(device)}")
+			return 1
+		device = devices[args.device - 1]
+	else:
+		device = choose_device(devices)
+		if device is None:
+			return 0
 	try:
 		log = open(args.log, "a", encoding="utf-8") if args.log else None
 	except OSError as error:
@@ -2089,12 +1834,22 @@ def main():
 	except LibUSBError as error:
 		print(f"error: {dongle_error_text(error)}")
 		return 1
+	if not receiver.has_sound_card and args.web is None and args.sonos is None and args.airplay is None:
+		receiver.stop()
+		print("error: No sound card found. Cast with --sonos or --airplay instead.")
+		return 1
 	receiver.county = args.county
 	receiver.volume = config.get_int(config.load(), "volume", DEFAULT_VOLUME, 0, MAX_VOLUME)
 	if args.acars:
 		receiver.acars_start()
+	from .radio import Radio
+	radio = Radio(receiver, args.alert_mode, log, args.record_format, args.record_dir)
 	with log or contextlib.nullcontext():
-		RadioCLI(receiver, args.alert_mode, args.sonos, args.airplay, log, args.record_format, args.record_dir).run()
+		if args.web is not None:
+			if not web.run(radio, args.web, args.web_password, args.sonos, args.airplay):
+				return 1
+		else:
+			RadioCLI(radio, args.sonos, args.airplay).run()
 	if receiver.error:
 		print(f"error: {receiver.error}")
 		return 1

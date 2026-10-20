@@ -214,9 +214,13 @@ airplay = [
 sonos = [
     { name = "soco" },
 ]
+web = [
+    { name = "aiohttp" },
+]
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", marker = "extra == 'web'" },
     { name = "airportsdata" },
     { name = "lameenc" },
     { name = "numpy" },
@@ -226,7 +230,7 @@ requires-dist = [
     { name = "setuptools", specifier = "<81" },
     { name = "soco", marker = "extra == 'sonos'" },
 ]
-provides-extras = ["sonos", "airplay"]
+provides-extras = ["sonos", "airplay", "web"]
 
 [[package]]
 name = "annotated-types"
