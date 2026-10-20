@@ -109,6 +109,8 @@ class Radio:
 		self.caster = None
 		self.browser_stream = None
 		self.scanning = False
+		# Output changes come from the frontend and from caster threads (on_lost).
+		self.lock = threading.RLock()
 
 	@property
 	def output(self):
@@ -123,16 +125,18 @@ class Radio:
 
 	def start_browsers(self):
 		"""Sends the audio to the web frontend's stream instead of the sound card."""
-		# A paused receiver gives the stream silence, and browsers pause on their own.
-		self.receiver.paused = False
-		self.browser_stream = StreamServer(self.receiver, AUDIO_RATE, None, serve_http=False)
-		self.browser_stream.start()
-		self.receiver.local_audio = False
+		with self.lock:
+			# A paused receiver gives the stream silence, and browsers pause on their own.
+			self.receiver.paused = False
+			self.browser_stream = StreamServer(self.receiver, AUDIO_RATE, None, serve_http=False)
+			self.browser_stream.start()
+			self.receiver.local_audio = False
 
 	def stop_browsers(self):
-		stream, self.browser_stream = self.browser_stream, None
-		stream.stop()
-		self.receiver.local_audio = True
+		with self.lock:
+			stream, self.browser_stream = self.browser_stream, None
+			stream.stop()
+			self.receiver.local_audio = True
 
 	def fall_back(self):
 		"""Plays in browsers after a cast ends on a computer with no sound card. Returns where the sound plays now."""
@@ -143,21 +147,22 @@ class Radio:
 
 	def set_output(self, target):
 		"""Plays on target: LOCAL (the sound card), BROWSERS (the web frontend's stream), or a CastTarget."""
-		if target == LOCAL and not self.receiver.has_sound_card:
-			self.message("error: This computer has no sound card.")
-			return
-		if self.caster:
-			caster, self.caster = self.caster, None
-			caster.stop()
-		if self.browser_stream:
-			self.stop_browsers()
-		if target == BROWSERS:
-			self.start_browsers()
-			self.message("Playing in browsers. Press Play to listen.")
-		elif target == LOCAL:
-			self.message("Playing on the server.")
-		elif not self.start_cast(target) and not self.receiver.has_sound_card:
-			self.start_browsers()
+		with self.lock:
+			if target == LOCAL and not self.receiver.has_sound_card:
+				self.message("error: This computer has no sound card.")
+				return
+			if self.caster:
+				caster, self.caster = self.caster, None
+				caster.stop()
+			if self.browser_stream:
+				self.stop_browsers()
+			if target == BROWSERS:
+				self.start_browsers()
+				self.message("Playing in browsers. Press Play to listen.")
+			elif target == LOCAL:
+				self.message("Playing on the server.")
+			elif not self.start_cast(target) and not self.receiver.has_sound_card:
+				self.start_browsers()
 		self.notify_status()
 
 	def notify_status(self):
@@ -495,36 +500,48 @@ class Radio:
 
 	def start_cast(self, target):
 		"""Plays on target instead of here. Returns False, after an error message, if it cannot."""
-		try:
-			caster = target.make()
-			caster.on_skip = self.seek
-			caster.on_change = self.notify_status
-			caster.on_lost = self.cast_lost
-			caster.start()
-		except Exception as error:
-			self.message(f"error: Could not cast to {target.label}: {error}")
-			return False
-		self.caster = caster
-		if self.waiting_for_alert:
-			caster.paused = True
-		self.message(f"Casting to {target.label}")
-		return True
+		with self.lock:
+			try:
+				caster = target.make()
+				caster.on_skip = self.seek
+				caster.on_change = self.notify_status
+				caster.on_lost = partial(self.cast_lost, caster)
+				caster.start()
+			except Exception as error:
+				self.message(f"error: Could not cast to {target.label}: {error}")
+				return False
+			self.caster = caster
+			if self.waiting_for_alert:
+				caster.paused = True
+			self.message(f"Casting to {target.label}")
+			return True
 
 	def stop_cast(self):
-		caster, self.caster = self.caster, None
-		caster.stop()
-		self.message(f"Stopped casting. {self.fall_back()}")
+		with self.lock:
+			caster, self.caster = self.caster, None
+			if caster is None:
+				return
+			caster.stop()
+			self.message(f"Stopped casting. {self.fall_back()}")
+		self.notify_status()
 
-	def cast_lost(self):
-		caster, self.caster = self.caster, None
-		caster.stop(release=False)
-		self.message(f"{caster.kind}: {caster.name} stopped playing the radio. {self.fall_back()}")
+	def cast_lost(self, caster):
+		"""Runs on a caster thread when caster stops playing the radio. Does nothing if the output has changed since."""
+		with self.lock:
+			if caster is not self.caster:
+				return
+			self.caster = None
+			caster.stop(release=False)
+			self.message(f"{caster.kind}: {caster.name} stopped playing the radio. {self.fall_back()}")
+		self.notify_status()
 
 	def close(self):
-		"""Stops recording and casting. Call it before Receiver.stop()."""
+		"""Stops recording, casting, and the browser stream. Call it before Receiver.stop()."""
 		if self.recorder or self.record_log:
 			self.toggle_record()
-		if self.caster:
-			self.caster.stop()
-		if self.browser_stream:
-			self.stop_browsers()
+		with self.lock:
+			caster, self.caster = self.caster, None
+			if caster:
+				caster.stop()
+			if self.browser_stream:
+				self.stop_browsers()

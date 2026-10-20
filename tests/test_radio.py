@@ -170,7 +170,7 @@ def test_lost_cast_plays_in_browsers_without_a_sound_card(receiver):
 	radio = Radio(receiver)
 	messages, _ = watch(radio)
 	radio.set_output(kitchen(receiver))
-	radio.cast_lost()
+	radio.caster.on_lost()
 	try:
 		assert radio.browser_stream is not None
 		assert messages[-1] == "Sonos: Kitchen stopped playing the radio. Playing in the browser again."
@@ -191,5 +191,24 @@ def test_failed_cast_plays_in_browsers_without_a_sound_card(receiver):
 	try:
 		assert messages[0] == "error: Could not cast to Kitchen (Sonos): no route"
 		assert radio.browser_stream is not None
+	finally:
+		radio.close()
+
+
+def test_late_lost_cast_leaves_the_new_output_alone(receiver):
+	receiver.has_sound_card = False
+	radio = Radio(receiver)
+	messages, _ = watch(radio)
+	radio.set_output(kitchen(receiver))
+	old = radio.caster
+	radio.set_output(kitchen(receiver))
+	new = radio.caster
+	count = len(messages)
+	try:
+		old.on_lost()
+		assert radio.caster is new
+		assert new.released is None
+		assert radio.browser_stream is None
+		assert len(messages) == count
 	finally:
 		radio.close()
