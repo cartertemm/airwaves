@@ -1,7 +1,7 @@
 from conftest import FakeCaster
 
 from airwaves import config, sdr
-from airwaves.radio import Preset, Radio
+from airwaves.radio import BROWSERS, LOCAL, CastTarget, Preset, Radio
 
 
 def watch(radio):
@@ -123,3 +123,73 @@ def test_alert_mode_unmutes_on_an_alert(receiver):
 	radio.announce_alert(sdr.Alert("Tornado Warning"))
 	assert not receiver.muted
 	assert messages == ["ALERT: Tornado Warning"]
+
+
+def kitchen(receiver):
+	return CastTarget("Kitchen (Sonos)", ["Kitchen"], lambda: FakeCaster(receiver))
+
+
+def test_browsers_output_streams_until_local(receiver):
+	radio = Radio(receiver)
+	receiver.paused = True
+	radio.set_output(BROWSERS)
+	stream = radio.browser_stream
+	assert stream.running
+	assert not receiver.local_audio
+	assert not receiver.paused
+	assert radio.status().output == BROWSERS
+	radio.set_output(LOCAL)
+	assert radio.browser_stream is None
+	assert not stream.running
+	assert receiver.local_audio
+	assert radio.status().output == LOCAL
+
+
+def test_local_output_needs_a_sound_card(receiver):
+	receiver.has_sound_card = False
+	radio = Radio(receiver)
+	messages, _ = watch(radio)
+	radio.set_output(LOCAL)
+	assert messages == ["error: This computer has no sound card."]
+
+
+def test_casting_stops_the_browser_stream(receiver):
+	radio = Radio(receiver)
+	radio.set_output(BROWSERS)
+	radio.set_output(kitchen(receiver))
+	assert radio.browser_stream is None
+	assert radio.caster.started
+	assert radio.status().output == "Kitchen (Sonos)"
+	radio.set_output(LOCAL)
+	assert radio.caster is None
+	assert receiver.local_audio
+
+
+def test_lost_cast_plays_in_browsers_without_a_sound_card(receiver):
+	receiver.has_sound_card = False
+	radio = Radio(receiver)
+	messages, _ = watch(radio)
+	radio.set_output(kitchen(receiver))
+	radio.cast_lost()
+	try:
+		assert radio.browser_stream is not None
+		assert messages[-1] == "Sonos: Kitchen stopped playing the radio. Playing in the browser again."
+	finally:
+		radio.close()
+	assert radio.browser_stream is None
+
+
+def test_failed_cast_plays_in_browsers_without_a_sound_card(receiver):
+	receiver.has_sound_card = False
+	radio = Radio(receiver)
+	messages, _ = watch(radio)
+
+	def broken():
+		raise OSError("no route")
+
+	radio.set_output(CastTarget("Kitchen (Sonos)", ["Kitchen"], broken))
+	try:
+		assert messages[0] == "error: Could not cast to Kitchen (Sonos): no route"
+		assert radio.browser_stream is not None
+	finally:
+		radio.close()

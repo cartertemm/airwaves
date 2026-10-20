@@ -12,6 +12,7 @@ from functools import partial
 from . import config, flight_log, nrsc5
 from .recorder import Recorder
 from .sdr import ACARS_LOG_NAME, AUDIO_RATE, HD_LOCK_SECONDS, RECORD_TIME_FORMAT, HdUnavailable, band_for
+from .sonos_cast import StreamServer
 
 LOCAL = "local"
 BROWSERS = "browsers"
@@ -106,6 +107,7 @@ class Radio:
 		if alert_mode:
 			receiver.muted = True
 		self.caster = None
+		self.browser_stream = None
 		self.scanning = False
 
 	@property
@@ -117,7 +119,46 @@ class Radio:
 	def output_name(self):
 		if self.caster:
 			return f"{self.caster.name} ({self.caster.kind})"
-		return LOCAL
+		return BROWSERS if self.browser_stream else LOCAL
+
+	def start_browsers(self):
+		"""Sends the audio to the web frontend's stream instead of the sound card."""
+		# A paused receiver gives the stream silence, and browsers pause on their own.
+		self.receiver.paused = False
+		self.browser_stream = StreamServer(self.receiver, AUDIO_RATE, None, serve_http=False)
+		self.browser_stream.start()
+		self.receiver.local_audio = False
+
+	def stop_browsers(self):
+		stream, self.browser_stream = self.browser_stream, None
+		stream.stop()
+		self.receiver.local_audio = True
+
+	def fall_back(self):
+		"""Plays in browsers after a cast ends on a computer with no sound card. Returns where the sound plays now."""
+		if self.receiver.has_sound_card:
+			return "Playing here again."
+		self.start_browsers()
+		return "Playing in the browser again."
+
+	def set_output(self, target):
+		"""Plays on target: LOCAL (the sound card), BROWSERS (the web frontend's stream), or a CastTarget."""
+		if target == LOCAL and not self.receiver.has_sound_card:
+			self.message("error: This computer has no sound card.")
+			return
+		if self.caster:
+			caster, self.caster = self.caster, None
+			caster.stop()
+		if self.browser_stream:
+			self.stop_browsers()
+		if target == BROWSERS:
+			self.start_browsers()
+			self.message("Playing in browsers. Press Play to listen.")
+		elif target == LOCAL:
+			self.message("Playing on the server.")
+		elif not self.start_cast(target) and not self.receiver.has_sound_card:
+			self.start_browsers()
+		self.notify_status()
 
 	def notify_status(self):
 		if self.on_status:
@@ -472,12 +513,12 @@ class Radio:
 	def stop_cast(self):
 		caster, self.caster = self.caster, None
 		caster.stop()
-		self.message("Stopped casting. Playing here again.")
+		self.message(f"Stopped casting. {self.fall_back()}")
 
 	def cast_lost(self):
 		caster, self.caster = self.caster, None
 		caster.stop(release=False)
-		self.message(f"{caster.kind}: {caster.name} stopped playing the radio. Playing here again.")
+		self.message(f"{caster.kind}: {caster.name} stopped playing the radio. {self.fall_back()}")
 
 	def close(self):
 		"""Stops recording and casting. Call it before Receiver.stop()."""
@@ -485,3 +526,5 @@ class Radio:
 			self.toggle_record()
 		if self.caster:
 			self.caster.stop()
+		if self.browser_stream:
+			self.stop_browsers()
