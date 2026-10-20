@@ -5,6 +5,7 @@
 import * as say from './announce.js'
 
 const VOLUME_STEP = 5
+const VOLUME_SEND_MS = 200
 const DEFAULT_SETTINGS = { sounds: true, keyBeeps: true, announceText: false }
 
 const clampPercent = percent => Math.min(100, Math.max(0, percent))
@@ -16,6 +17,8 @@ export function createRadio({ api, player, sfx, speak, storage }) {
 	let connection = 'connecting'
 	let wantStation = false
 	let scanStart = null
+	let volumeTimer = null
+	let unsentVolume = null
 
 	const inBrowser = () => status?.output === 'browsers'
 	const currentBand = () => status?.bands.find(band => band.name === status.band)
@@ -26,6 +29,21 @@ export function createRadio({ api, player, sfx, speak, storage }) {
 
 	function send(name, body = {}) {
 		api.post(name, body).catch(error => speak(error.message, true))
+	}
+
+	function sendVolume(percent) {
+		if (volumeTimer !== null) {
+			unsentVolume = percent
+			return
+		}
+		send('volume', { percent })
+		volumeTimer = setTimeout(() => {
+			volumeTimer = null
+			if (unsentVolume === null) return
+			const latest = unsentVolume
+			unsentVolume = null
+			sendVolume(latest)
+		}, VOLUME_SEND_MS)
 	}
 
 	function announceChanges(previous, next) {
@@ -134,7 +152,7 @@ export function createRadio({ api, player, sfx, speak, storage }) {
 			if (inBrowser()) {
 				player.volume = level
 			} else {
-				send('volume', { percent: level })
+				sendVolume(level)
 				// Until the server's next status arrives, the next key press builds on this level.
 				status = { ...status, volume: level }
 			}

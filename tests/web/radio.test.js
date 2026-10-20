@@ -87,13 +87,29 @@ test('band keys go round the list of bands', () => {
 	assert.deepEqual(posts, [['band', { name: 'AM' }], ['band', { name: 'AM' }]])
 })
 
-test('volume keys on the server output change by 5 and speak the level', () => {
+test('volume keys on the server output change by 5 and speak the level', t => {
+	t.mock.timers.enable({ apis: ['setTimeout'] })
 	const { radio, handlers, posts, spoken } = setUp()
 	handlers.onStatus(status())
 	radio.changeVolume(1)
 	radio.changeVolume(1)
-	assert.deepEqual(posts, [['volume', { percent: 55 }], ['volume', { percent: 60 }]])
 	assert.deepEqual(spoken.at(-1), ['Volume 60 percent.', true])
+	t.mock.timers.tick(200)
+	assert.deepEqual(posts, [['volume', { percent: 55 }], ['volume', { percent: 60 }]])
+})
+
+test('held volume keys send one command per 200 ms, and the last level after the burst', t => {
+	t.mock.timers.enable({ apis: ['setTimeout'] })
+	const { radio, handlers, posts } = setUp()
+	handlers.onStatus(status())
+	radio.changeVolume(1)
+	radio.changeVolume(1)
+	radio.changeVolume(1)
+	assert.deepEqual(posts, [['volume', { percent: 55 }]])
+	t.mock.timers.tick(200)
+	assert.deepEqual(posts, [['volume', { percent: 55 }], ['volume', { percent: 65 }]])
+	t.mock.timers.tick(1000)
+	assert.equal(posts.length, 2)
 })
 
 test('in the browser, play, mute, and volume act on the audio element', () => {
