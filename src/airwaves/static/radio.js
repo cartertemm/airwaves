@@ -15,6 +15,7 @@ export function createRadio({ api, player, sfx, speak, storage }) {
 	let status = null
 	let connection = 'connecting'
 	let wantStation = false
+	let scanStart = null
 
 	const inBrowser = () => status?.output === 'browsers'
 	const currentBand = () => status?.bands.find(band => band.name === status.band)
@@ -28,9 +29,13 @@ export function createRadio({ api, player, sfx, speak, storage }) {
 	}
 
 	function announceChanges(previous, next) {
-		if (next.scanning && !previous.scanning) sfx.startStatic()
+		if (next.scanning && !previous.scanning) {
+			sfx.startStatic()
+			scanStart = previous
+		}
 		if (previous.scanning && !next.scanning) sfx.stopStatic()
-		const tuned = !next.scanning && (previous.freq_mhz !== next.freq_mhz || previous.band !== next.band || previous.scanning)
+		const before = previous.scanning ? scanStart ?? previous : previous
+		const tuned = !next.scanning && (before.freq_mhz !== next.freq_mhz || before.band !== next.band)
 		if (tuned) {
 			speak(say.tunedLine(next), true)
 			wantStation = !next.station

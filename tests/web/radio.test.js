@@ -51,6 +51,15 @@ test('seeking plays static until the scan ends, then says where it stopped', () 
 	assert.deepEqual(spoken, [['99.5 MHz, KQRS.', true]])
 })
 
+test('a seek that finds nothing stops the static and speaks nothing', () => {
+	const { handlers, spoken, sounds } = setUp()
+	handlers.onStatus(status())
+	handlers.onStatus(status({ scanning: true }))
+	handlers.onStatus(status({ scanning: false }))
+	assert.deepEqual(sounds, ['startStatic', 'stopStatic'])
+	assert.deepEqual(spoken, [])
+})
+
 test('RDS text is spoken only when the setting is on', () => {
 	const { radio, handlers, spoken, saved } = setUp()
 	handlers.onStatus(status())
