@@ -14,7 +14,8 @@ import { panelScreen } from './views/panel.js'
 import { helpScreen, settingsScreen } from './views/settings.js'
 
 const storage = createStorage('sdr')
-const speech = createSpeech({ storage })
+// The library would use the browser voice on iOS, which talks over VoiceOver.
+const speech = createSpeech({ storage, defaultMode: 'aria' })
 speech.init()
 
 const player = createPlayer({ audio: document.getElementById('player') })

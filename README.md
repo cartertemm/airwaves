@@ -324,7 +324,7 @@ uv run sdr 97.9 --web
 
 `sdr` prints the address to open, such as `http://192.168.1.20:8000`. Use `--web 8080` for another port. If the port is in use, `sdr` prints an error and exits.
 
-The page works like a radio's front panel. Every command is a button, and also a key when you use a keyboard. A screen reader, or the browser's own voice, says what changes: the frequency, the station name, messages, and weather alerts. Short sounds play for key presses, while seeking, and at the end of a band. Settings (press S) turn each sound and spoken item on or off.
+The page works like a radio's front panel. Every command is a button, and also a key when you use a keyboard. A screen reader, or the browser's own voice, says what changes: the frequency, the station name, messages, and weather alerts. Short sounds play for key presses, while seeking, and at the end of a band. Settings (press S) turn each sound and spoken item on or off. The page speaks through a screen reader. Without one, choose Text to speech under Speech in Settings to hear the browser's voice.
 
 | Key | Action |
 | --- | --- |

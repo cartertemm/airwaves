@@ -9,7 +9,8 @@ function sheet(title, onDone, ...children) {
 
 /** props: { radio, speech, onDone } */
 export function settingsScreen(root, { radio, speech, onDone }) {
-	const speechFields = speechSettingsFields({ speech })
+	// The library hides this choice on iOS, where sighted users need it to turn the voice on.
+	const speechFields = speechSettingsFields({ speech, modes: ['aria', 'tts'] })
 	const setting = (label, key, hint, autoFocus = false) =>
 		checkboxField(label, { get: () => radio.settings[key], set: value => radio.setSetting(key, value), hint, autoFocus })
 	mount(root, [
