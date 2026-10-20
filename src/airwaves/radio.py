@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
 
+import numpy as np
+
 from . import config, flight_log, nrsc5
 from .recorder import Recorder
 from .sdr import ACARS_LOG_NAME, AUDIO_RATE, HD_LOCK_SECONDS, RECORD_TIME_FORMAT, HdUnavailable, band_for
@@ -133,8 +135,13 @@ class Radio:
 			self.receiver.local_audio = False
 			# A paused receiver gives the stream silence, and browsers pause on their own.
 			self.receiver.paused = False
-			self.browser_stream = StreamServer(self.receiver, AUDIO_RATE, None, serve_http=False)
+			self.browser_stream = StreamServer(self.receiver, AUDIO_RATE, None, serve_http=False, read_audio=self.browser_audio)
 			self.browser_stream.start()
+
+	def browser_audio(self, frame_count):
+		"""Browsers set their own volume, so alert mode silences their stream here until an alert arrives."""
+		audio = self.receiver.read_audio(frame_count)
+		return np.zeros_like(audio) if self.waiting_for_alert else audio
 
 	def stop_browsers(self):
 		"""Stops the browser stream. The sound card stays off, so the next output can take over the audio."""

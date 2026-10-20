@@ -114,10 +114,11 @@ class StreamHandler(BaseHTTPRequestHandler):
 class StreamServer:
 	"""Serves a Receiver's audio as a live MP3 stream over HTTP, with the station and RDS text as its title.
 
-	With hold_new_connections, new connections get silence until release() moves them to the live stream. With serve_http=False it only encodes, and another server adds clients: objects with put_nowait(data)."""
+	With hold_new_connections, new connections get silence until release() moves them to the live stream. With serve_http=False it only encodes, and another server adds clients: objects with put_nowait(data). read_audio replaces receiver.read_audio as the source."""
 
-	def __init__(self, receiver, audio_rate, host, hold_new_connections=False, serve_http=True):
+	def __init__(self, receiver, audio_rate, host, hold_new_connections=False, serve_http=True, read_audio=None):
 		self.receiver = receiver
+		self.read_audio = read_audio or receiver.read_audio
 		self.audio_rate = audio_rate
 		self.host = host
 		self.hold_new_connections = hold_new_connections
@@ -172,7 +173,7 @@ class StreamServer:
 		frames = round(self.audio_rate * CHUNK_SECONDS)
 		next_time = time.monotonic()
 		while self.running:
-			audio = self.receiver.read_audio(frames)
+			audio = self.read_audio(frames)
 			data = bytes(encoder.encode((np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes()))
 			with self.clients_lock:
 				sends = [(client, data) for client in self.clients] + [(client, self.silence) for client in self.pending]

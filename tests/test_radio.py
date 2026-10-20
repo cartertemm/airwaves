@@ -1,3 +1,5 @@
+import numpy as np
+
 from conftest import FakeCaster, FakeReceiver
 
 from airwaves import config, sdr
@@ -123,6 +125,14 @@ def test_alert_mode_unmutes_on_an_alert(receiver):
 	radio.announce_alert(sdr.Alert("Tornado Warning"))
 	assert not receiver.muted
 	assert messages == ["ALERT: Tornado Warning"]
+
+
+def test_alert_mode_silences_browsers_until_an_alert(receiver):
+	radio = Radio(receiver, alert_mode=True)
+	receiver.read_audio = lambda frame_count: np.ones((frame_count, 2), dtype=np.float32)
+	assert not radio.browser_audio(4).any()
+	radio.announce_alert(sdr.Alert("Tornado Warning"))
+	assert radio.browser_audio(4).all()
 
 
 def kitchen(receiver):
