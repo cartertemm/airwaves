@@ -6,6 +6,16 @@ const $ = (id) => document.getElementById(id);
 const player = $("player");
 let state = null;
 let listening = false;
+let playToken = 0;
+let wantStationName = false;
+const volumeWorks = (() => {
+	// iPhone Safari ignores writes to the volume of media elements.
+	const old = player.volume;
+	player.volume = 0.5;
+	const works = player.volume === 0.5;
+	player.volume = old;
+	return works;
+})();
 
 function say(region, text) {
 	// Clearing first makes screen readers repeat a message that is the same as the last one.
@@ -29,7 +39,7 @@ async function send(command, body = {}) {
 	}
 }
 
-function setOptions(select, items) {
+function setOptions(select, items, current) {
 	// Rebuilding only on change keeps focus and the screen reader's place.
 	const key = JSON.stringify(items);
 	if (select.dataset.items === key) {
@@ -38,14 +48,12 @@ function setOptions(select, items) {
 	select.dataset.items = key;
 	const chosen = select.value;
 	select.replaceChildren(...items.map(({value, label}) => new Option(label, value)));
-	if (items.some((item) => item.value === chosen)) {
-		select.value = chosen;
-	}
+	select.value = items.some((item) => item.value === chosen) ? chosen : current;
 }
 
-function setValue(control, value) {
-	// Never change a control the user is on.
-	if (document.activeElement !== control) {
+function setValue(control, value, changed) {
+	// Only a new value from the radio replaces a choice the user has not sent yet, and never in the control the user is on.
+	if (changed && document.activeElement !== control) {
 		control.value = value;
 	}
 }
@@ -54,22 +62,29 @@ function inBrowser() {
 	return state !== null && state.output === "browsers";
 }
 
-function renderPlayback() {
+function renderPlayback(updateVolume = false) {
 	const playing = inBrowser() ? listening : !state.paused;
 	const muted = inBrowser() ? player.muted : state.muted;
 	$("play").setAttribute("aria-pressed", String(playing));
 	$("mute").setAttribute("aria-pressed", String(muted));
-	setValue($("volume"), inBrowser() ? Math.round(player.volume * 100) : state.volume);
+	$("volume").disabled = inBrowser() && !volumeWorks;
+	setValue($("volume"), inBrowser() ? Math.round(player.volume * 100) : state.volume, updateVolume);
 }
 
 function render(next) {
 	const previous = state;
 	state = next;
+	const changed = (key) => previous === null || previous[key] !== next[key];
 	const name = [next.frequency, next.station].filter(Boolean).join(" ");
 	$("station").textContent = next.scanning ? "Scanning" : name;
 	document.title = `${name} | SDR Tuner`;
-	if (previous && !next.scanning && (previous.frequency !== next.frequency || previous.station !== next.station || previous.scanning)) {
+	const tuned = previous !== null && !next.scanning && (changed("freq_mhz") || changed("band") || previous.scanning);
+	if (tuned) {
 		say($("message"), name);
+		wantStationName = !next.station;
+	} else if (wantStationName && next.station && !next.scanning) {
+		say($("message"), next.station);
+		wantStationName = false;
 	}
 	$("text").textContent = next.text;
 	if (next.acars_active) {
@@ -81,29 +96,31 @@ function render(next) {
 	}
 	$("alert").hidden = !next.alert;
 	$("alert").textContent = next.alert ? `Weather alert: ${next.alert}` : "";
-	if (next.alert && (!previous || previous.alert !== next.alert)) {
-		showError(`Weather alert: ${next.alert}`);
-	}
-	setOptions($("band"), next.bands.map((band) => ({value: band.name, label: `${band.name}, ${band.min_mhz} to ${band.max_mhz} MHz`})));
-	setValue($("band"), next.band);
-	setValue($("frequency"), next.freq_mhz);
+	setOptions($("band"), next.bands.map((band) => ({value: band.name, label: `${band.name}, ${band.min_mhz} to ${band.max_mhz} MHz`})), next.band);
+	setValue($("band"), next.band, changed("band"));
+	setValue($("frequency"), next.freq_mhz, changed("freq_mhz"));
 	const programs = Object.entries(next.hd_programs).sort(([a], [b]) => a - b);
-	setOptions($("hd"), [{value: "", label: "Analog"}, ...programs.map(([number, label]) => ({value: number, label: `HD${Number(number) + 1} ${label}`.trim()}))]);
-	setValue($("hd"), next.hd_program === null ? "" : String(next.hd_program));
-	setOptions($("preset"), next.presets.map((preset) => ({value: String(preset.number), label: `${preset.number}: ${preset.label}`})));
-	setOptions($("output"), next.outputs.map((output) => ({value: output, label: OUTPUT_LABELS[output] || output})));
-	setValue($("output"), next.output);
+	const hdValue = next.hd_program === null ? "" : String(next.hd_program);
+	setOptions($("hd"), [{value: "", label: "Analog"}, ...programs.map(([number, label]) => ({value: number, label: `HD${Number(number) + 1} ${label}`.trim()}))], hdValue);
+	setValue($("hd"), hdValue, changed("hd_program"));
+	setOptions($("preset"), next.presets.map((preset) => ({value: String(preset.number), label: `${preset.number}: ${preset.label}`})), "");
+	setOptions($("output"), next.outputs.map((output) => ({value: output, label: OUTPUT_LABELS[output] || output})), next.output);
+	setValue($("output"), next.output, changed("output"));
 	if (previous && previous.output === "browsers" && next.output !== "browsers") {
 		stopListening();
 	}
-	renderPlayback();
+	renderPlayback(changed("volume") || changed("output"));
 }
 
 function startListening() {
 	listening = true;
+	const token = ++playToken;
 	// A new address each time, so the browser does not replay old audio from its cache.
 	player.src = `stream?${Date.now()}`;
-	player.play().catch(() => {
+	player.play().catch((error) => {
+		if (token !== playToken || error.name === "AbortError") {
+			return;
+		}
 		stopListening();
 		showError("The browser could not play the stream.");
 	});
@@ -112,6 +129,7 @@ function startListening() {
 
 function stopListening() {
 	listening = false;
+	playToken++;
 	player.pause();
 	player.removeAttribute("src");
 	player.load();
@@ -151,6 +169,9 @@ $("find-speakers").addEventListener("click", () => {
 });
 
 $("play").addEventListener("click", () => {
+	if (state === null) {
+		return;
+	}
 	if (inBrowser()) {
 		listening ? stopListening() : startListening();
 	} else {
@@ -159,6 +180,9 @@ $("play").addEventListener("click", () => {
 });
 
 $("mute").addEventListener("click", () => {
+	if (state === null) {
+		return;
+	}
 	if (inBrowser()) {
 		player.muted = !player.muted;
 		renderPlayback();
@@ -176,12 +200,15 @@ $("volume").addEventListener("change", () => {
 	}
 });
 
-player.addEventListener("error", () => {
+function streamStopped() {
 	if (listening) {
 		stopListening();
 		showError("The stream stopped. Press Play to listen again.");
 	}
-});
+}
+
+player.addEventListener("error", streamStopped);
+player.addEventListener("ended", streamStopped);
 
 const events = new EventSource("events");
 events.addEventListener("status", (event) => {
@@ -192,10 +219,17 @@ events.addEventListener("message", (event) => {
 	const message = JSON.parse(event.data);
 	if (message.error) {
 		showError(message.text.replace(/^error: /, ""));
+	} else if (message.text.startsWith("ALERT:")) {
+		showError(message.text);
 	} else {
 		say($("message"), message.text);
 	}
 });
 events.addEventListener("error", () => {
-	$("connection").textContent = "Connection lost, reconnecting.";
+	const connection = $("connection");
+	if (events.readyState === EventSource.CLOSED) {
+		connection.textContent = "Connection to the radio closed. Reload the page.";
+	} else if (connection.textContent === "") {
+		connection.textContent = "Connection lost, reconnecting.";
+	}
 });
