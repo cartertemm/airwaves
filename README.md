@@ -313,7 +313,7 @@ The first time you cast, Windows or macOS may ask whether Python can use the net
 
 ### Using a browser
 
-`sdr --web` runs the radio with no keyboard controls and serves a page that any browser on your network can use. This is the way to run `sdr` on a computer with no screen, such as a home server or a Raspberry Pi. It needs the `web` extra.
+`sdr --web` runs the radio with no terminal keyboard controls and serves a page that any browser on your network can use. This is the way to run `sdr` on a computer with no screen, such as a home server or a Raspberry Pi. It needs the `web` extra.
 
 ```
 uv sync --extra sonos --extra airplay --extra web
@@ -324,26 +324,37 @@ uv run sdr 97.9 --web
 
 `sdr` prints the address to open, such as `http://192.168.1.20:8000`. Use `--web 8080` for another port. If the port is in use, `sdr` prints an error and exits.
 
-The page can tune, step, seek, change bands, choose HD programs and presets, and show the station name, RDS text, signal, and weather alerts. "Play on" chooses where the sound goes. Press Switch to apply your choice.
+The page works like a radio's front panel. Every command is a button, and also a key when you use a keyboard. A screen reader, or the browser's own voice, says what changes: the frequency, the station name, messages, and weather alerts. Short sounds play for key presses, while seeking, and at the end of a band. Settings (press S) turn each sound and spoken item on or off. The page speaks through a screen reader. Without one, choose Text to speech under Speech in Settings to hear the browser's voice.
 
-* **Server speakers**: the sound card of the computer running `sdr`. Not listed when it has none. Play, Mute, and the volume control then change the sound on that computer.
-* **This browser**: press Play to listen. Play, Mute, and the volume control then only change this browser. Several browsers can listen at once. On iPhone, the volume slider is off, because iOS does not let a page set the volume. Use the volume buttons on the phone.
-* **A Sonos or AirPlay speaker**: press Find speakers first. Needs the `sonos` or `airplay` extra.
+| Key | Action |
+| --- | --- |
+| Space | Play or pause |
+| Left, Right | Step down, step up |
+| Shift+Left, Shift+Right (or Ctrl+Left, Ctrl+Right) | Seek to the previous or next station |
+| Up, Down | Volume up, volume down |
+| M | Mute or unmute |
+| F | Type a frequency |
+| 1 to 0 | Tune to that preset. 0 is preset 10. |
+| Shift+1 to Shift+0 | Save the station to that preset, replacing what is there |
+| B, Shift+B | Next band, previous band |
+| D, Shift+D | Next and previous HD program. The first press checks for HD. |
+| P | Presets. Delete clears the highlighted preset. |
+| O | Choose where the sound plays |
+| I | Say what is playing |
+| S | Settings |
+| H | Help |
 
-The page controls match the keys like this:
+Escape goes back to the front panel from any other screen.
 
-* Space: Play
-* `_` and `+`: the volume control
-* `m`: Mute
-* `s` and `w`: Step down and Step up
-* `S` and `W`: Seek down and Seek up
-* `t`: the frequency box and Tune
-* `d` and `D`: the HD program list and Play program. Choose HD1 to check the station for HD.
-* `p`: the preset list and Tune preset
-* `P`: Save current station
-* `c`: Find speakers, then "Play on" and Switch
+On a phone, open the page and add it to the home screen (in Safari, tap Share, then Add to Home Screen) to use it like an app. When you listen in the browser on an iPhone, set the volume with the phone's buttons.
 
-The page has no control for ACARS (`a`), recording (`r`), or the signal display (`i`). It always shows the signal.
+Press O, or the Play on button, to choose where the sound plays:
+
+* **Server speakers**: the sound card of the computer running `sdr`. Not listed when it has none. Play, Mute, and the Up and Down keys then change the sound on that computer.
+* **This browser**: press Play to listen. Play, Mute, and the Up and Down keys then only change this browser. Several browsers can listen at once. On iPhone, iOS does not let a page set the volume, so use the volume buttons on the phone.
+* **A Sonos or AirPlay speaker**: press Find Sonos and AirPlay speakers first. Needs the `sonos` or `airplay` extra. The panel shows a volume slider for the speaker.
+
+The page has no control for ACARS or recording yet. It always shows the signal.
 
 Anyone on your network can open the page. To ask for a password, add `--web-password PASSWORD`. Browsers send it without encryption, so use it on a home network only. Any user name works.
 

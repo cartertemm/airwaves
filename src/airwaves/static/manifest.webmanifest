@@ -1,0 +1,9 @@
+{
+	"name": "SDR Tuner",
+	"short_name": "SDR Tuner",
+	"start_url": ".",
+	"display": "standalone",
+	"background_color": "#0e1216",
+	"theme_color": "#0e1216",
+	"icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
