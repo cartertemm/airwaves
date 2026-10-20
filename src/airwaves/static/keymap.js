@@ -1,14 +1,5 @@
-// The page's keyboard commands as one data table. The help screen is generated from it.
-
 const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
 
-/**
- * Bindings per view. `keys` are combos like "Shift+ArrowLeft". `repeat` lets a
- * held key fire again. `beep` sounds the key beep first. `local` marks keys
- * that a screen handles itself; they are listed only so help is complete.
- * `keyText` names the keys in help when listing them all would be too long.
- * A binding with no keys is a front panel button only.
- */
 export const KEYMAP = {
 	panel: [
 		{ command: 'togglePause', keys: ['Space'], label: 'Play or pause', beep: true },
@@ -49,13 +40,11 @@ export const KEYMAP = {
 
 export const VIEW_TITLES = { panel: 'Front panel', frequency: 'Frequency entry', list: 'Presets, bands, HD programs, and outputs' }
 
-/** The preset a number key combo names: "Shift+3" is 3, "0" is 10. */
 export function presetNumberOf(combo) {
 	const digit = Number(combo.at(-1))
 	return digit === 0 ? 10 : digit
 }
 
-/** "Ctrl+Shift+ArrowLeft" style name for a keydown event. */
 export function comboOf(event) {
 	let key = event.key
 	// Shift+1 types "!" on one layout and something else on the next; the physical key is the same.
@@ -83,7 +72,6 @@ function activatesNatively(target, combo) {
 	return activatable && (combo === 'Space' || combo === 'Enter')
 }
 
-/** Listens for keydown on target and calls handlers[command](combo) for the binding that matches in the current view. Returns a function that stops listening. */
 export function createKeymap({ target = globalThis.window, getView, handlers, keymap = KEYMAP, beep = () => {} }) {
 	function onKeyDown(event) {
 		if (event.defaultPrevented) return

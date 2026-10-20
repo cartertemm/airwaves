@@ -1,6 +1,3 @@
-// The front panel: what is tuned, and every command as a labeled button, so it
-// works by touch with or without a screen reader. Keys come from keymap.js.
-
 import { el, mount } from 'audiogame-utils'
 import { outputName, signalBars, signalLine } from '../announce.js'
 
@@ -31,7 +28,6 @@ function setText(node, text) {
 	if (node.textContent !== text) node.textContent = text
 }
 
-/** props: { radio, commands } where commands maps keymap command names to functions. */
 export function panelScreen(root, { radio, commands }) {
 	const frequency = el('h1', { class: 'frequency' })
 	const station = el('p', { class: 'station' })

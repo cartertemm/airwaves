@@ -1,8 +1,5 @@
-// Type a frequency in MHz. Enter tunes and goes back to the front panel.
-
 import { el, mount } from 'audiogame-utils'
 
-/** props: { radio, speak, onDone } */
 export function frequencyScreen(root, { radio, speak, onDone }) {
 	const input = el('input', { id: 'frequency', type: 'text', inputmode: 'decimal', autocomplete: 'off', autoFocus: true, value: radio.status ? String(radio.status.freq_mhz) : '' })
 	const form = el(

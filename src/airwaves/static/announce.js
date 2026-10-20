@@ -1,5 +1,3 @@
-// Every sentence the page speaks or shows, as pure functions. They are short so they do not talk over the radio.
-
 const OUTPUT_NAMES = { local: 'Server speakers', browsers: 'This browser' }
 // Signal above the noise floor, in dB, for each bar on the display.
 const SIGNAL_BARS_DB = [5, 15, 25, 35]
@@ -34,12 +32,10 @@ export function signalLine(status) {
 	return `Signal ${Math.round(status.signal_db)} dB.`
 }
 
-/** How many of the four signal bars to light. */
 export function signalBars(signalDb) {
 	return SIGNAL_BARS_DB.filter(threshold => signalDb >= threshold).length
 }
 
-/** What the I key says: everything the display shows. */
 export function infoLine(status) {
 	const parts = [tunedLine(status)]
 	if (status.text) parts.push(textLine(status.text))
@@ -61,7 +57,6 @@ export function pauseLine(paused) {
 	return paused ? 'Paused.' : 'Playing.'
 }
 
-/** A message from the radio, without the "error: " the server marks errors with. */
 export function messageLine(text) {
 	return text.replace(/^error: /, '')
 }

@@ -1,5 +1,3 @@
-// Settings and help. Plain forms and text.
-
 import { checkboxField, el, mount, speechSettingsFields } from 'audiogame-utils'
 import { KEYMAP, VIEW_TITLES } from '../keymap.js'
 
@@ -7,7 +5,6 @@ function sheet(title, onDone, ...children) {
 	return el('main', { class: 'sheet' }, el('div', { class: 'sheet-head' }, el('h1', { text: title, tabindex: '-1' }), el('button', { type: 'button', text: 'Close', onClick: onDone })), ...children)
 }
 
-/** props: { radio, speech, onDone } */
 export function settingsScreen(root, { radio, speech, onDone }) {
 	// The library hides this choice on iOS, where sighted users need it to turn the voice on.
 	const speechFields = speechSettingsFields({ speech, modes: ['aria', 'tts'] })
@@ -27,7 +24,6 @@ export function settingsScreen(root, { radio, speech, onDone }) {
 	return speechFields.dispose
 }
 
-/** props: { onDone } */
 export function helpScreen(root, { onDone }) {
 	const sections = Object.entries(KEYMAP).flatMap(([view, bindings]) => [
 		el('h2', { text: VIEW_TITLES[view] }),

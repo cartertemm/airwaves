@@ -1,5 +1,3 @@
-// What each list screen shows, built from the radio's status.
-
 import { bandLabel, outputName, presetLabel } from '../announce.js'
 
 export function presetsList(radio) {

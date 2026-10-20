@@ -1,5 +1,3 @@
-// Wires the page together: server connection, player, sounds, speech, the radio controller, the screens, and the keys.
-
 import { createRouter, createSpeech, createStorage } from 'audiogame-utils'
 import { createApi } from './api.js'
 import { createKeymap, presetNumberOf } from './keymap.js'

@@ -1,5 +1,3 @@
-// Plays the radio's MP3 stream in this browser through one <audio> element.
-
 const PERCENT = 100
 
 /** Some browsers (iPhone Safari) ignore a page setting the volume. */
@@ -11,7 +9,6 @@ function canSetVolume(audio) {
 	return works
 }
 
-/** Assign onStopped(reason) to hear when listening ends by itself: 'failed' if the browser refused to play, 'stopped' if the stream ended, 'paused' if the browser or the system paused the audio. */
 export function createPlayer({ audio }) {
 	let listening = false
 	// Each start gets a new token, so a late refusal from an older play() is ignored.

@@ -1,7 +1,3 @@
-// The page's radio: holds the last status from the server, decides what to say
-// and which sounds to play, and sends commands. In the "browsers" output, play,
-// mute, and volume act on this browser's player instead of the server.
-
 import * as say from './announce.js'
 
 const VOLUME_STEP = 5

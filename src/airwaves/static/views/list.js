@@ -1,5 +1,3 @@
-// A keyboard list for presets, bands, HD programs, and outputs.
-//
 // Each entry is a real button, so touch screen readers need nothing special.
 // The container has role="application" so NVDA and JAWS pass arrow keys
 // through. Only the highlighted button is in the tab order, so Tab enters and
@@ -9,7 +7,6 @@ import { el, mount } from 'audiogame-utils'
 
 const PAGE = 10
 
-/** items: [{ id, label, current }]. Callbacks get the item id. onRemove is optional. startId picks the highlighted item, otherwise the current one. */
 export function keyboardList({ label, items, onChoose, onRemove = null, emptyText, startId = null, startIndex = null }) {
 	const start = items.findIndex(item => item.id === startId)
 	const fallback = startIndex === null ? Math.max(0, items.findIndex(item => item.current)) : Math.max(0, Math.min(items.length - 1, startIndex))
@@ -51,13 +48,6 @@ export function keyboardList({ label, items, onChoose, onRemove = null, emptyTex
 	return { node, isEmpty: buttons.length === 0, focus: () => buttons[index]?.focus(), selectedId: () => items[index]?.id ?? null, selectedIndex: () => index }
 }
 
-/**
- * A sheet with a heading, a keyboard list, optional action buttons, and Close.
- * props: { radio, describe, onDone }. describe(radio) returns
- * { title, items, onChoose(id), onRemove?(id), emptyText, actions?: [{ text, onClick(highlightedId) }] }.
- * It is called again whenever the radio changes. Only the list is rebuilt, and
- * only when its items change, so focus on the other buttons stays put.
- */
 export function listScreen(root, { radio, describe, onDone }) {
 	const first = describe(radio)
 	const holder = el('div')

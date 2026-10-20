@@ -1,8 +1,5 @@
-// Talks to the radio: commands as JSON POSTs, status and messages as server-sent events.
-
 export function createApi({ fetchFn = (...args) => globalThis.fetch(...args), EventSourceClass = globalThis.EventSource } = {}) {
 	return {
-		/** Sends a command. Rejects with an Error whose message can be spoken. */
 		async post(name, body = {}) {
 			let response
 			try {
@@ -16,7 +13,6 @@ export function createApi({ fetchFn = (...args) => globalThis.fetch(...args), Ev
 			}
 		},
 
-		/** onConnection gets 'open', 'lost' (the browser is reconnecting), or 'closed'. Returns a function that stops listening. */
 		listen({ onStatus, onMessage, onConnection }) {
 			const events = new EventSourceClass('events')
 			events.addEventListener('status', event => {

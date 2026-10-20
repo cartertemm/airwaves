@@ -1,5 +1,3 @@
-/* Large type and large targets, readable across a room, comfortable on a phone. */
-
 :root {
 	color-scheme: light dark;
 	--bg: #f4f6f8;
@@ -90,8 +88,6 @@ button:active {
 	outline: 3px solid var(--focus);
 	outline-offset: 2px;
 }
-
-/* Display */
 
 .display {
 	position: relative;
@@ -191,8 +187,6 @@ button:active {
 	color: var(--alert-text);
 }
 
-/* Tuning */
-
 .tuning {
 	display: grid;
 	grid-template-columns: repeat(4, 1fr);
@@ -232,8 +226,6 @@ button:active {
 .more button {
 	background: transparent;
 }
-
-/* Playback bar */
 
 .transport {
 	position: fixed;
@@ -313,8 +305,6 @@ input[type='range'] {
 input[type='range']:disabled {
 	opacity: 0.4;
 }
-
-/* Sheets: the screens other than the front panel */
 
 .sheet {
 	min-height: 100vh;

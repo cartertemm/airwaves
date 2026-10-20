@@ -1,6 +1,3 @@
-// The page's sounds, made with the Web Audio API so there are no sound files.
-// Every method is safe to call when audio is unavailable or sounds are off.
-
 const STATIC_GAIN = 0.12
 const TONE_GAIN = 0.2
 // The weather radio alarm is 1050 Hz.
@@ -51,31 +48,26 @@ export function createSfx({
 			if (context.state === 'suspended') context.resume()
 		},
 
-		/** A short mechanical click: saving a preset. */
 		click() {
 			if (!ready()) return
 			tone(1800, 0, 0.03, 'square')
 		},
 
-		/** A very short, high blip: most key presses. */
 		keyBeep() {
 			if (!ready()) return
 			tone(3000, 0, 0.03, 'triangle')
 		},
 
-		/** One low note: a step past the end of the band. */
 		edgeTone() {
 			if (!ready()) return
 			tone(220, 0, 0.18)
 		},
 
-		/** Three beeps at the weather radio alarm pitch: a weather alert arrived. */
 		alertTone() {
 			if (!ready()) return
 			for (let beep = 0; beep < ALERT_BEEPS; beep++) tone(ALERT_HZ, beep * 0.4, 0.25)
 		},
 
-		/** Looping radio static while a seek runs. Calling it twice is harmless. */
 		startStatic() {
 			if (!ready() || staticNodes) return
 			const source = context.createBufferSource()

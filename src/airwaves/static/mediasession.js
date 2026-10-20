@@ -1,5 +1,3 @@
-// Lock screen, headset, and keyboard media keys, while this browser plays the radio.
-
 export function bindMediaSession(radio, { mediaSession = globalThis.navigator?.mediaSession, MediaMetadataClass = globalThis.MediaMetadata } = {}) {
 	if (!mediaSession || !MediaMetadataClass) return () => {}
 	const actions = {
