@@ -16,7 +16,9 @@ const storage = createStorage('sdr')
 const speech = createSpeech({ storage, defaultMode: 'aria' })
 speech.init()
 
-const player = createPlayer({ audio: document.getElementById('player') })
+// iPhone has only ManagedMediaSource, which is not tested with this page, so it plays the stream address.
+const feedSource = window.MediaSource?.isTypeSupported('audio/mpeg') ? window.MediaSource : null
+const player = createPlayer({ audio: document.getElementById('player'), MediaSource: feedSource, fetch: window.fetch.bind(window), URL: window.URL })
 let radio = null
 const sfx = createSfx({ isEnabled: () => radio?.settings.sounds ?? true })
 radio = createRadio({ api: createApi(), player, sfx, speak: (text, interrupt) => speech.speak(text, interrupt), storage })

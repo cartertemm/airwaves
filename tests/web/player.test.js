@@ -103,3 +103,116 @@ test('a pause event at the end of the stream is left to the ended event', () => 
 	audio.fire('ended')
 	assert.deepEqual(reasons, ['stopped'])
 })
+
+function ranges(list) {
+	return { length: list.length, start: index => list[index][0], end: index => list[index][1] }
+}
+
+function fakeFeed() {
+	const sources = []
+	const requests = []
+	class MediaSource {
+		constructor() {
+			this.listeners = {}
+			this.buffer = null
+			sources.push(this)
+		}
+		addEventListener(type, fn) { this.listeners[type] = fn }
+		open() { this.listeners.sourceopen() }
+		addSourceBuffer(type) {
+			const listeners = {}
+			this.buffer = {
+				type, updating: false, appended: [], removed: [], held: [],
+				get buffered() { return ranges(this.held) },
+				appendBuffer(data) { this.updating = true; this.appended.push(data) },
+				remove(start, end) { this.updating = true; this.removed.push([start, end]) },
+				addEventListener(name, fn) { listeners[name] = fn },
+				finish(held) { this.updating = false; if (held) this.held = held; listeners.updateend() },
+			}
+			return this.buffer
+		}
+	}
+	function fetch(address, { signal }) {
+		const waiting = []
+		const reads = []
+		const request = {
+			address, signal,
+			send(value) { const read = { value, done: false }; waiting.length ? waiting.shift()(read) : reads.push(read) },
+			end() { const read = { done: true }; waiting.length ? waiting.shift()(read) : reads.push(read) },
+		}
+		requests.push(request)
+		const reader = { read: () => (reads.length ? Promise.resolve(reads.shift()) : new Promise(resolve => waiting.push(resolve))) }
+		return Promise.resolve({ ok: true, body: { getReader: () => reader } })
+	}
+	const URL = { createObjectURL: () => 'blob:feed', revokeObjectURL() {} }
+	return { MediaSource, fetch, URL, sources, requests }
+}
+
+const settle = () => new Promise(resolve => setTimeout(resolve, 0))
+
+test('with a media source, the player feeds the stream to the audio one piece at a time', async () => {
+	const audio = fakeAudio()
+	const feed = fakeFeed()
+	const player = createPlayer({ audio, ...feed })
+	player.start()
+	assert.equal(audio.src, 'blob:feed')
+	feed.sources[0].open()
+	const buffer = feed.sources[0].buffer
+	assert.equal(buffer.type, 'audio/mpeg')
+	await settle()
+	assert.match(feed.requests[0].address, /^stream\?\d+$/)
+	feed.requests[0].send('a')
+	feed.requests[0].send('b')
+	await settle()
+	assert.deepEqual(buffer.appended, ['a'])
+	buffer.finish([[0, 0.1]])
+	assert.deepEqual(buffer.appended, ['a', 'b'])
+})
+
+test('a fed player skips ahead when it falls behind the newest audio', async () => {
+	const audio = fakeAudio()
+	audio.currentTime = 2
+	const feed = fakeFeed()
+	createPlayer({ audio, ...feed }).start()
+	feed.sources[0].open()
+	await settle()
+	feed.requests[0].send('a')
+	await settle()
+	feed.sources[0].buffer.finish([[0, 4]])
+	assert.equal(audio.currentTime, 3.7)
+})
+
+test('a fed player removes audio it has already played', async () => {
+	const audio = fakeAudio()
+	audio.currentTime = 12
+	const feed = fakeFeed()
+	createPlayer({ audio, ...feed }).start()
+	feed.sources[0].open()
+	await settle()
+	feed.requests[0].send('a')
+	await settle()
+	const buffer = feed.sources[0].buffer
+	buffer.finish([[0, 12.2]])
+	assert.deepEqual(buffer.removed, [[0, 11]])
+})
+
+test('a fed stream that ends reports stopped, and stop cancels the request', async () => {
+	const feed = fakeFeed()
+	const player = createPlayer({ audio: fakeAudio(), ...feed })
+	const reasons = []
+	player.onStopped = reason => reasons.push(reason)
+	player.start()
+	feed.sources[0].open()
+	await settle()
+	feed.requests[0].end()
+	await settle()
+	assert.deepEqual(reasons, ['stopped'])
+	player.start()
+	feed.sources[1].open()
+	await settle()
+	player.stop()
+	assert.equal(feed.requests[1].signal.aborted, true)
+	feed.requests[1].end()
+	await settle()
+	assert.deepEqual(reasons, ['stopped'])
+})
