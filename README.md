@@ -352,7 +352,7 @@ Press O, or the Play on button, to choose where the sound plays:
 
 * **Server speakers**: the sound card of the computer running `sdr`. Not listed when it has none. Play, Mute, and the volume control then change the sound on that computer.
 * **This browser**: press Play to listen. Play, Mute, and the volume control then only change this browser. Several browsers can listen at once. On iPhone, the volume slider is off, because iOS does not let a page set the volume. Use the volume buttons on the phone.
-* **A Sonos or AirPlay speaker**: press Find speakers first. Needs the `sonos` or `airplay` extra.
+* **A Sonos or AirPlay speaker**: press Find Sonos and AirPlay speakers first. Needs the `sonos` or `airplay` extra.
 
 The page has no control for ACARS or recording yet. It always shows the signal.
 
