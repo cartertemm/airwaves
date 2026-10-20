@@ -419,15 +419,47 @@ input[type='text'] {
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 0.5rem;
+	min-height: 3rem;
 	margin: 0.75rem 0 0;
 }
 
 .check label {
-	display: inline;
+	flex: 1;
+	min-height: 3rem;
+	display: flex;
+	align-items: center;
 	margin: 0;
 }
 
-input[type='checkbox'] {
+select {
+	display: block;
+	width: 100%;
+	min-height: 3rem;
+	padding: 0.5rem 1rem;
+	border: 1px solid var(--border);
+	border-radius: 0.875rem;
+	background: var(--surface-2);
+}
+
+.field input[type='range'] {
+	display: block;
+	width: 100%;
+}
+
+fieldset {
+	border: 1px solid var(--border);
+	border-radius: 0.875rem;
+	margin: 0.5rem 0 1rem;
+	padding: 0.5rem 1rem;
+}
+
+legend {
+	padding: 0 0.25rem;
+	font-weight: 600;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
 	width: 1.5rem;
 	height: 1.5rem;
 	margin: 0;
