@@ -165,13 +165,32 @@ def test_stream_sends_mp3(receiver):
 	serve(receiver, check)
 
 
-def test_page_files_are_served(receiver):
+def test_static_files_are_served_with_their_types(receiver, tmp_path, monkeypatch):
+	(tmp_path / "views").mkdir()
+	for name in ("index.html", "app.css", "views/panel.js", "icon.svg", "manifest.webmanifest", "notes.txt"):
+		(tmp_path / name).write_text("x", encoding="utf-8")
+	monkeypatch.setattr(web, "STATIC_FOLDER", str(tmp_path))
+
 	async def check(client, radio):
-		for path, content_type in (("/", "text/html"), ("/app.js", "text/javascript"), ("/app.css", "text/css")):
+		for path, content_type in (
+			("/", "text/html"),
+			("/app.css", "text/css"),
+			("/views/panel.js", "text/javascript"),
+			("/icon.svg", "image/svg+xml"),
+			("/manifest.webmanifest", "application/manifest+json"),
+		):
 			response = await client.get(path)
-			assert response.status == 200
+			assert response.status == 200, path
 			assert response.content_type == content_type
+		for path in ("/notes.txt", "/missing.js", "/views"):
+			assert (await client.get(path)).status == 404, path
+		assert (await client.get("/api/state")).content_type == "application/json"
 	serve(receiver, check)
+
+
+def test_static_file_refuses_paths_outside_the_folder():
+	assert web.static_file("../web.py") is None
+	assert web.static_file("index.html") is not None
 
 
 @pytest.mark.parametrize("value", ["Infinity", "NaN"])

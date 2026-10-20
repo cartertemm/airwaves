@@ -26,8 +26,14 @@ EVENT_BACKLOG = 100
 STREAM_WAIT_SECONDS = 1
 RUNNING_CHECK_SECONDS = 0.5
 STATIC_FOLDER = os.path.join(os.path.dirname(__file__), "static")
-# Windows can map .js to text/plain, so the types are set here.
-PAGES = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"), "/app.css": ("app.css", "text/css")}
+# Windows can map .js to text/plain, so the types are set here. Other file types are not served.
+STATIC_TYPES = {
+	".html": "text/html",
+	".js": "text/javascript",
+	".css": "text/css",
+	".svg": "image/svg+xml",
+	".webmanifest": "application/manifest+json",
+}
 # Connecting a UDP socket sends nothing. It only picks the network interface that reaches this address.
 PROBE_ADDRESS = ("8.8.8.8", 80)
 
@@ -103,6 +109,20 @@ def preset_number(body, required=True):
 	return value
 
 
+def static_file(path):
+	"""Returns (file path, content type) for a page file under STATIC_FOLDER, or None if it is missing, outside the folder, or of a type the page does not use."""
+	folder = os.path.realpath(STATIC_FOLDER)
+	full = os.path.realpath(os.path.join(folder, path))
+	try:
+		inside = os.path.commonpath([full, folder]) == folder
+	except ValueError:
+		inside = False
+	content_type = STATIC_TYPES.get(os.path.splitext(full)[1])
+	if not inside or content_type is None or not os.path.isfile(full):
+		return None
+	return full, content_type
+
+
 class LoopQueue:
 	"""A StreamServer client that passes audio to an asyncio queue. put_nowait runs on the encode thread."""
 
@@ -157,12 +177,12 @@ class WebServer:
 
 	def make_app(self):
 		app = aioweb.Application(middlewares=[self.check_password])
-		for path in PAGES:
-			app.router.add_get(path, self.page)
 		app.router.add_get("/events", self.events)
 		app.router.add_get("/stream", self.stream)
 		app.router.add_get("/api/state", self.get_state)
 		app.router.add_post("/api/{name}", self.command)
+		app.router.add_get("/", self.page)
+		app.router.add_get("/{path:.+}", self.page)
 		app.on_startup.append(self.started)
 		app.on_shutdown.append(self.shutting_down)
 		app.on_cleanup.append(self.cleaned_up)
@@ -264,8 +284,11 @@ class WebServer:
 				listener.put_nowait(data)
 
 	async def page(self, request):
-		name, content_type = PAGES[request.path]
-		with open(os.path.join(STATIC_FOLDER, name), "rb") as file:
+		found = static_file(request.match_info.get("path", "index.html"))
+		if found is None:
+			raise aioweb.HTTPNotFound()
+		full, content_type = found
+		with open(full, "rb") as file:
 			body = file.read()
 		return aioweb.Response(body=body, content_type=content_type, charset="utf-8", headers={"Cache-Control": "no-cache"})
 
