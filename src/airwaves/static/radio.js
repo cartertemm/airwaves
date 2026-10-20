@@ -6,6 +6,7 @@ import * as say from './announce.js'
 
 const VOLUME_STEP = 5
 const VOLUME_SEND_MS = 200
+const ALERT_SPEECH_DELAY_MS = 1200
 const DEFAULT_SETTINGS = { sounds: true, keyBeeps: true, announceText: false }
 
 const clampPercent = percent => Math.min(100, Math.max(0, percent))
@@ -75,7 +76,8 @@ export function createRadio({ api, player, sfx, speak, storage }) {
 	function receiveMessage({ text, error }) {
 		if (text.startsWith('ALERT:')) {
 			sfx.alertTone()
-			speak(text, true)
+			if (settings.sounds) setTimeout(() => speak(text, true), ALERT_SPEECH_DELAY_MS)
+			else speak(text, true)
 			return
 		}
 		speak(say.messageLine(text), error)

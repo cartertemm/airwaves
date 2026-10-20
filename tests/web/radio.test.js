@@ -178,12 +178,23 @@ test('leaving the browser output stops listening', () => {
 	assert.equal(player.listening, false)
 })
 
-test('weather alerts sound the alarm and interrupt', () => {
+test('weather alerts sound the alarm, then speak the text and interrupt', t => {
+	t.mock.timers.enable({ apis: ['setTimeout'] })
 	const { handlers, spoken, sounds } = setUp()
 	handlers.onMessage({ text: 'ALERT: Tornado Warning', error: false })
 	handlers.onMessage({ text: 'error: Could not start HD.', error: true })
 	assert.deepEqual(sounds, ['alertTone'])
-	assert.deepEqual(spoken, [['ALERT: Tornado Warning', true], ['Could not start HD.', true]])
+	assert.deepEqual(spoken, [['Could not start HD.', true]])
+	t.mock.timers.tick(1200)
+	assert.deepEqual(spoken, [['Could not start HD.', true], ['ALERT: Tornado Warning', true]])
+})
+
+test('with sounds off, the alert text is spoken at once', () => {
+	const { radio, handlers, spoken, sounds } = setUp()
+	radio.setSetting('sounds', false)
+	handlers.onMessage({ text: 'ALERT: Tornado Warning', error: false })
+	assert.deepEqual(spoken, [['ALERT: Tornado Warning', true]])
+	assert.deepEqual(sounds, ['alertTone'])
 })
 
 test('a lost connection is said once, and its return once', () => {
