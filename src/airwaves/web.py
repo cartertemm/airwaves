@@ -93,6 +93,16 @@ def hd_program(body):
 	return value
 
 
+def preset_number(body, required=True):
+	"""Returns the preset number (1 or more), or None when it may be left out and is."""
+	if not required and body.get("number") is None:
+		return None
+	value = whole_number(body, "number")
+	if value < 1:
+		raise ValueError("number must be 1 or more.")
+	return value
+
+
 class LoopQueue:
 	"""A StreamServer client that passes audio to an asyncio queue. put_nowait runs on the encode thread."""
 
@@ -133,7 +143,9 @@ class WebServer:
 			"band": lambda body: partial(radio.tune_band, text(body, "name")),
 			"hd": lambda body: partial(radio.select_hd, hd_program(body)),
 			"preset": lambda body: partial(self.update_presets, partial(radio.choose_preset, whole_number(body, "number"))),
-			"save_preset": lambda body: partial(self.update_presets, radio.save_preset),
+			"save_preset": lambda body: partial(self.update_presets, partial(radio.save_preset, preset_number(body, required=False))),
+			"delete_preset": lambda body: partial(self.update_presets, partial(radio.delete_preset, preset_number(body))),
+			"hd_step": lambda body: partial(radio.step_hd, direction(body)),
 			"volume": lambda body: partial(radio.set_volume, round(number(body, "percent"))),
 			"mute": lambda body: partial(radio.set_muted, flag(body, "muted")),
 			"pause": lambda body: partial(radio.set_paused, flag(body, "paused")),

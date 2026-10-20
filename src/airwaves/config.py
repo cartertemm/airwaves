@@ -24,12 +24,24 @@ def load(section=SECTION):
 	return parser[section]
 
 
+def write(parser):
+	with open(FILE_NAME, "w", encoding="utf-8") as file:
+		parser.write(file)
+
+
 def save(key, value, section=SECTION):
 	"""Writes one setting, keeping the others. Raises OSError when the file cannot be written."""
 	settings = load(section)
 	settings[key] = str(value)
-	with open(FILE_NAME, "w", encoding="utf-8") as file:
-		settings.parser.write(file)
+	write(settings.parser)
+
+
+def remove(key, section=SECTION):
+	"""Deletes one setting, keeping the others. Raises OSError when the file cannot be written."""
+	settings = load(section)
+	if key in settings:
+		del settings[key]
+		write(settings.parser)
 
 
 def get_int(settings, key, default, low, high):

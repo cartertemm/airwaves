@@ -48,6 +48,9 @@ async def until(condition):
 	("volume", {"percent": 70}, lambda receiver: receiver.volume == 70),
 	("mute", {"muted": True}, lambda receiver: receiver.muted),
 	("pause", {"paused": True}, lambda receiver: receiver.paused),
+	("save_preset", {"number": 2}, lambda receiver: config.presets().get(2) == "97.9"),
+	("delete_preset", {"number": 5}, lambda receiver: True),
+	("hd_step", {"direction": 1}, lambda receiver: receiver.hd is not None),
 ])
 def test_commands_reach_the_receiver(receiver, command, body, done):
 	async def check(client, radio):
@@ -73,6 +76,9 @@ def test_output_command_starts_the_browser_stream(receiver):
 	("mute", {"muted": 1}),
 	("preset", {"number": 1.5}),
 	("output", {"target": "Kitchen (Sonos)"}),
+	("save_preset", {"number": 0}),
+	("delete_preset", {}),
+	("hd_step", {"direction": 0}),
 ])
 def test_bad_bodies_are_refused(receiver, command, body):
 	async def check(client, radio):

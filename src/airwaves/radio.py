@@ -350,24 +350,37 @@ class Radio:
 			receiver.hd_stop()
 			self.message(f"No HD on {receiver.band.format(receiver.freq_mhz)}.")
 
-	def save_preset(self):
+	def save_preset(self, number=None):
+		"""Saves the current station to preset number, replacing what is there, or to the next free number."""
 		receiver = self.receiver
 		if receiver.acars_active:
 			self.message("Cannot save a preset while decoding ACARS.")
 			return
 		current = Preset(receiver.freq_mhz, receiver.hd_program if receiver.hd_active else None)
-		for number, text in config.presets().items():
-			preset = Preset.parse(text)
-			if preset and preset.text() == current.text():
-				self.message(f"{current.describe(receiver.bands)} is already preset {number}.")
-				return
-		number = config.next_preset_number()
+		if number is None:
+			for saved, text in config.presets().items():
+				preset = Preset.parse(text)
+				if preset and preset.text() == current.text():
+					self.message(f"{current.describe(receiver.bands)} is already preset {saved}.")
+					return
+			number = config.next_preset_number()
 		try:
 			config.save(str(number), current.text(), config.PRESETS)
 		except OSError as error:
 			self.message(f"Could not save the preset to {config.FILE_NAME}: {error}")
 			return
 		self.message(f"{current.describe(receiver.bands)} saved to preset {number}")
+
+	def delete_preset(self, number):
+		if number not in config.presets():
+			self.message(f"Preset {number} is empty.")
+			return
+		try:
+			config.remove(str(number), config.PRESETS)
+		except OSError as error:
+			self.message(f"Could not change {config.FILE_NAME}: {error}")
+			return
+		self.message(f"Cleared preset {number}.")
 
 	def tune_preset(self, preset):
 		receiver = self.receiver

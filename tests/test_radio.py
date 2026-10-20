@@ -100,6 +100,27 @@ def test_presets_save_list_and_choose(receiver):
 	assert messages[-1] == "error: Preset 2 is not available."
 
 
+def test_save_preset_to_a_slot_replaces_it(receiver):
+	radio = Radio(receiver)
+	messages, _ = watch(radio)
+	config.save("3", "101.1", config.PRESETS)
+	radio.save_preset(3)
+	assert config.presets() == {3: "97.9"}
+	assert messages[-1] == "97.9 MHz saved to preset 3"
+
+
+def test_delete_preset(receiver):
+	radio = Radio(receiver)
+	messages, _ = watch(radio)
+	config.save("1", "97.9", config.PRESETS)
+	config.save("2", "101.1", config.PRESETS)
+	radio.delete_preset(1)
+	assert config.presets() == {2: "101.1"}
+	assert messages[-1] == "Cleared preset 1."
+	radio.delete_preset(1)
+	assert messages[-1] == "Preset 1 is empty."
+
+
 def test_preset_text_round_trips():
 	assert Preset.parse("99.9 HD2") == Preset(99.9, 1)
 	assert Preset(99.9, 1).text() == "99.9 HD2"
