@@ -193,6 +193,8 @@ HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "
 HELP_KEYS_PER_LINE = 3
 CAST_KINDS = ("sonos", "airplay")
 DEFAULT_WEB_PORT = 8000
+MIN_PORT = 1
+MAX_PORT = 65535
 RECORD_FORMATS = ("wav", "mp3")
 ACARS_LOG_NAME = "flights.log"
 RECORD_TIME_FORMAT = "%Y-%m-%d %H-%M-%S"
@@ -1750,6 +1752,17 @@ class RadioCLI:
 			print()
 
 
+def web_port(text):
+	"""Reads the --web port for argparse."""
+	try:
+		port = int(text)
+	except ValueError:
+		raise argparse.ArgumentTypeError(f"{text} is not a port number") from None
+	if not MIN_PORT <= port <= MAX_PORT:
+		raise argparse.ArgumentTypeError(f"port must be from {MIN_PORT} to {MAX_PORT}")
+	return port
+
+
 def main():
 	parser = argparse.ArgumentParser(description="Listen to AM, FM, or NOAA weather radio with an RTL-SDR dongle.")
 	parser.add_argument("-v", "--version", action="version", version=VERSION_TEXT)
@@ -1765,7 +1778,7 @@ def main():
 	cast.add_argument("--sonos", nargs="?", const="", metavar="SPEAKER", help="Cast to the Sonos group with this speaker in it. Without a name, choose from a list.")
 	cast.add_argument("--airplay", nargs="?", const="", metavar="DEVICE", help="Cast to this AirPlay device. Without a name, choose from a list.")
 	parser.add_argument("--device", type=int, metavar="N", help="Use the Nth dongle, counting from 1. Without it, choose from a list when there is more than one.")
-	parser.add_argument("--web", nargs="?", type=int, const=DEFAULT_WEB_PORT, metavar="PORT", help=f"Control the radio from a browser instead of the keyboard. Default port is {DEFAULT_WEB_PORT}. Needs the web extra.")
+	parser.add_argument("--web", nargs="?", type=web_port, const=DEFAULT_WEB_PORT, metavar="PORT", help=f"Control the radio from a browser instead of the keyboard. Default port is {DEFAULT_WEB_PORT}. Needs the web extra.")
 	parser.add_argument("--web-password", metavar="PASSWORD", help="Ask browsers for this password. Needs --web.")
 	args = parser.parse_args()
 	print(VERSION_TEXT)
@@ -1783,6 +1796,8 @@ def main():
 		parser.error("--alert-mode cannot be used with --acars")
 	if args.web_password is not None and args.web is None:
 		parser.error("--web-password needs --web")
+	if args.web_password == "":
+		parser.error("--web-password cannot be empty")
 	if args.web is not None and "" in (args.sonos, args.airplay):
 		parser.error("with --web, --sonos and --airplay need a speaker name")
 	if args.web is not None:

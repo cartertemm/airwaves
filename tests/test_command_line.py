@@ -34,3 +34,10 @@ def test_web_with_two_dongles_needs_device(monkeypatch, capsys):
 	monkeypatch.setattr(sdr, "list_devices", lambda: devices)
 	assert run(monkeypatch, "--web") == 1
 	assert "--device" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("args", [("--web", "0"), ("--web", "70000"), ("--web", "http"), ("--web", "--web-password", "")])
+def test_bad_web_options_are_refused(monkeypatch, args):
+	with pytest.raises(SystemExit) as stop:
+		run(monkeypatch, *args)
+	assert stop.value.code == 2
