@@ -344,6 +344,7 @@ def run(radio, port, password=None, sonos=None, airplay=None):
 
 	Returns False if the server could not start, for example because the port is in use."""
 	receiver = radio.receiver
+	radio.browsers_available = True
 	server = WebServer(radio, password)
 
 	def startup():

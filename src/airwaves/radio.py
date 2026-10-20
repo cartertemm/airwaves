@@ -17,6 +17,8 @@ from .sonos_cast import StreamServer
 LOCAL = "local"
 BROWSERS = "browsers"
 HD_POLL_SECONDS = 0.02
+LOCAL_TEXT = "Playing on the server."
+BROWSERS_TEXT = "Playing in browsers. Press Play to listen."
 NO_SPEAKERS = "No speakers found. Sonos needs the sonos extra and AirPlay the airplay extra."
 PRESET_PATTERN = re.compile(r"(\d+(?:\.\d+)?)(?:\s+HD(\d+))?", re.IGNORECASE)
 
@@ -109,6 +111,8 @@ class Radio:
 		self.caster = None
 		self.browser_stream = None
 		self.scanning = False
+		# The web frontend sets this, so a cast that ends can go back to the browsers.
+		self.browsers_available = False
 		# Output changes come from the frontend and from caster threads (on_lost).
 		self.lock = threading.RLock()
 
@@ -126,24 +130,28 @@ class Radio:
 	def start_browsers(self):
 		"""Sends the audio to the web frontend's stream instead of the sound card."""
 		with self.lock:
+			self.receiver.local_audio = False
 			# A paused receiver gives the stream silence, and browsers pause on their own.
 			self.receiver.paused = False
 			self.browser_stream = StreamServer(self.receiver, AUDIO_RATE, None, serve_http=False)
 			self.browser_stream.start()
-			self.receiver.local_audio = False
 
 	def stop_browsers(self):
+		"""Stops the browser stream. The sound card stays off, so the next output can take over the audio."""
 		with self.lock:
 			stream, self.browser_stream = self.browser_stream, None
 			stream.stop()
-			self.receiver.local_audio = True
 
-	def fall_back(self):
-		"""Plays in browsers after a cast ends on a computer with no sound card. Returns where the sound plays now."""
-		if self.receiver.has_sound_card:
-			return "Playing here again."
-		self.start_browsers()
-		return "Playing in the browser again."
+	def fall_back(self, to_browsers=False):
+		"""Plays here, or in browsers if to_browsers or there is no sound card, after a cast ends or fails. Returns where the sound plays now."""
+		with self.lock:
+			if to_browsers or (self.browsers_available and not self.receiver.has_sound_card):
+				self.start_browsers()
+				return "Playing in the browser again."
+			if self.receiver.has_sound_card:
+				self.receiver.local_audio = True
+				return "Playing here again."
+			return "This computer has no sound card, so nothing plays."
 
 	def set_output(self, target):
 		"""Plays on target: LOCAL (the sound card), BROWSERS (the web frontend's stream), or a CastTarget."""
@@ -151,6 +159,13 @@ class Radio:
 			if target == LOCAL and not self.receiver.has_sound_card:
 				self.message("error: This computer has no sound card.")
 				return
+			if target == BROWSERS and self.browser_stream:
+				self.message(BROWSERS_TEXT)
+				return
+			if target == LOCAL and not self.caster and not self.browser_stream:
+				self.message(LOCAL_TEXT)
+				return
+			from_browsers = self.browser_stream is not None
 			if self.caster:
 				caster, self.caster = self.caster, None
 				caster.stop()
@@ -158,11 +173,12 @@ class Radio:
 				self.stop_browsers()
 			if target == BROWSERS:
 				self.start_browsers()
-				self.message("Playing in browsers. Press Play to listen.")
+				self.message(BROWSERS_TEXT)
 			elif target == LOCAL:
-				self.message("Playing on the server.")
-			elif not self.start_cast(target) and not self.receiver.has_sound_card:
-				self.start_browsers()
+				self.receiver.local_audio = True
+				self.message(LOCAL_TEXT)
+			else:
+				self.start_cast(target, from_browsers)
 		self.notify_status()
 
 	def notify_status(self):
@@ -498,8 +514,8 @@ class Radio:
 			self.message(f"error: No speaker named {name}." if name else f"error: {NO_SPEAKERS}")
 		return sorted(targets, key=lambda target: target.label.lower())
 
-	def start_cast(self, target):
-		"""Plays on target instead of here. Returns False, after an error message, if it cannot."""
+	def start_cast(self, target, from_browsers=False):
+		"""Plays on target instead of here. Returns False, after an error message, if it cannot. from_browsers says the browsers played before, so they play again if the cast fails."""
 		with self.lock:
 			try:
 				caster = target.make()
@@ -508,7 +524,7 @@ class Radio:
 				caster.on_lost = partial(self.cast_lost, caster)
 				caster.start()
 			except Exception as error:
-				self.message(f"error: Could not cast to {target.label}: {error}")
+				self.message(f"error: Could not cast to {target.label}: {str(error).rstrip('.')}. {self.fall_back(from_browsers)}")
 				return False
 			self.caster = caster
 			if self.waiting_for_alert:
