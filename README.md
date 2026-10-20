@@ -106,12 +106,12 @@ uv sync --extra web
 To use the commands from any folder without `uv run`, install them as tools instead:
 
 ```
-uv tool install ".[sonos,airplay]"
+uv tool install ".[sonos,airplay,web]"
 ```
 
 ### Building a Windows executable
 
-To give the receiver to someone who does not have Python, run `build.bat`. It builds `dist\sdr.exe`, one file that includes Python, the packages, and the dongle driver, with Sonos and AirPlay casting:
+To give the receiver to someone who does not have Python, run `build.bat`. It builds `dist\sdr.exe`, one file that includes Python, the packages, and the dongle driver, with Sonos and AirPlay casting and the web frontend:
 
 ```
 build.bat
@@ -121,7 +121,7 @@ The other commands are not in the executable.
 
 ### Building a macOS or Linux executable
 
-On an Apple silicon Mac with Homebrew, or on Debian or Ubuntu, run `build.sh`. It builds `dist/sdr`, one file that includes Python, the packages, the dongle driver, and libnrsc5, with Sonos and AirPlay casting. On Linux it builds the dongle driver from source, and the file runs on distributions as old as the one it was built on:
+On an Apple silicon Mac with Homebrew, or on Debian or Ubuntu, run `build.sh`. It builds `dist/sdr`, one file that includes Python, the packages, the dongle driver, and libnrsc5, with Sonos and AirPlay casting and the web frontend. On Linux it builds the dongle driver from source, and the file runs on distributions as old as the one it was built on:
 
 ```
 ./build.sh
