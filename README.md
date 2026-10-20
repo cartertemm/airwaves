@@ -91,17 +91,13 @@ The commands need Python 3.10 or later and [uv](https://docs.astral.sh/uv/). In 
 uv sync
 ```
 
-Then run each command with `uv run`, for example `uv run sdr 97.9` or `uv run tunein "jazz"`. To cast to Sonos speakers or AirPlay devices, install the extra packages for them:
+Then run each command with `uv run`, for example `uv run sdr 97.9` or `uv run tunein "jazz"`. Some features need extra packages. The `sonos` and `airplay` extras are for casting to Sonos speakers and AirPlay devices. The `web` extra is for controlling the radio from a browser. To install all of them, run:
 
 ```
-uv sync --extra sonos --extra airplay
+uv sync --extra sonos --extra airplay --extra web
 ```
 
-To control the radio from a browser, install the `web` extra:
-
-```
-uv sync --extra web
-```
+`uv sync` removes extras that you do not name, so list every one you want.
 
 To use the commands from any folder without `uv run`, install them as tools instead:
 
@@ -320,9 +316,11 @@ The first time you cast, Windows or macOS may ask whether Python can use the net
 `sdr --web` runs the radio with no keyboard controls and serves a page that any browser on your network can use. This is the way to run `sdr` on a computer with no screen, such as a home server or a Raspberry Pi. It needs the `web` extra.
 
 ```
-uv sync --extra web
+uv sync --extra sonos --extra airplay --extra web
 uv run sdr 97.9 --web
 ```
+
+`uv sync` removes extras that you do not name, so list every one you want.
 
 `sdr` prints the address to open, such as `http://192.168.1.20:8000`. Use `--web 8080` for another port. If the port is in use, `sdr` prints an error and exits.
 
