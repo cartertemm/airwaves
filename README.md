@@ -324,24 +324,33 @@ uv run sdr 97.9 --web
 
 `sdr` prints the address to open, such as `http://192.168.1.20:8000`. Use `--web 8080` for another port. If the port is in use, `sdr` prints an error and exits.
 
-The page can tune, step, seek, change bands, choose HD programs and presets, and show the station name, RDS text, signal, and weather alerts. "Play on" chooses where the sound goes. Press Switch to apply your choice.
+The page works like a radio's front panel. Every command is a button, and also a key when you use a keyboard. A screen reader, or the browser's own voice, says what changes: the frequency, the station name, messages, and weather alerts. Short sounds play for key presses, while seeking, and at the end of a band. Settings (press S) turn each sound and spoken item on or off.
+
+| Key | Action |
+| --- | --- |
+| Space | Play or pause |
+| Left, Right | Step down, step up |
+| Shift+Left, Shift+Right | Seek to the previous or next station |
+| Up, Down | Volume up, volume down |
+| M | Mute or unmute |
+| F | Type a frequency |
+| 1 to 0 | Tune to that preset. 0 is preset 10. |
+| Shift+1 to Shift+0 | Save the station to that preset, replacing what is there |
+| B, Shift+B | Next band, previous band |
+| D, Shift+D | Next and previous HD program. The first press checks for HD. |
+| P | Presets. Delete clears the highlighted preset. |
+| O | Choose where the sound plays |
+| I | Say what is playing |
+| S | Settings |
+| H | Help |
+
+Escape goes back to the front panel from any other screen.
+
+On a phone, open the page and add it to the home screen (in Safari, tap Share, then Add to Home Screen) to use it like an app. When you listen in the browser on an iPhone, set the volume with the phone's buttons.
 
 * **Server speakers**: the sound card of the computer running `sdr`. Not listed when it has none. Play, Mute, and the volume control then change the sound on that computer.
 * **This browser**: press Play to listen. Play, Mute, and the volume control then only change this browser. Several browsers can listen at once. On iPhone, the volume slider is off, because iOS does not let a page set the volume. Use the volume buttons on the phone.
 * **A Sonos or AirPlay speaker**: press Find speakers first. Needs the `sonos` or `airplay` extra.
-
-The page controls match the keys like this:
-
-* Space: Play
-* `_` and `+`: the volume control
-* `m`: Mute
-* `s` and `w`: Step down and Step up
-* `S` and `W`: Seek down and Seek up
-* `t`: the frequency box and Tune
-* `d` and `D`: the HD program list and Play program. Choose HD1 to check the station for HD.
-* `p`: the preset list and Tune preset
-* `P`: Save current station
-* `c`: Find speakers, then "Play on" and Switch
 
 The page has no control for ACARS (`a`), recording (`r`), or the signal display (`i`). It always shows the signal.
 
