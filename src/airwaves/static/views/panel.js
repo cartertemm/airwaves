@@ -76,7 +76,7 @@ export function panelScreen(root, { radio, commands }) {
 		const muted = radio.isMuted()
 		mute.setAttribute('aria-pressed', String(muted))
 		muteIcon.replaceChildren(icon(muted ? 'mute' : 'sound'))
-		volume.disabled = !radio.canSetVolume()
+		volume.hidden = !radio.isCasting()
 		// Never move a slider the user is holding.
 		if (document.activeElement !== volume) volume.value = String(radio.volume())
 		volume.setAttribute('aria-valuetext', `${radio.volume()} percent`)

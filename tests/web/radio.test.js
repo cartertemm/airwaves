@@ -170,6 +170,17 @@ test('where the page cannot set the volume, the volume keys say so', () => {
 	assert.equal(radio.canSetVolume(), false)
 })
 
+test('only a speaker on the network counts as casting', () => {
+	const { radio, handlers } = setUp()
+	assert.equal(radio.isCasting(), false)
+	handlers.onStatus(status({ output: 'local' }))
+	assert.equal(radio.isCasting(), false)
+	handlers.onStatus(status({ output: 'browsers' }))
+	assert.equal(radio.isCasting(), false)
+	handlers.onStatus(status({ output: 'Kitchen (sonos)' }))
+	assert.equal(radio.isCasting(), true)
+})
+
 test('leaving the browser output stops listening', () => {
 	const { radio, handlers, player } = setUp()
 	handlers.onStatus(status({ output: 'browsers' }))

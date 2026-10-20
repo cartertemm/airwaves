@@ -114,6 +114,7 @@ export function createRadio({ api, player, sfx, speak, storage }) {
 		isMuted: () => (inBrowser() ? player.muted : Boolean(status?.muted)),
 		volume: () => (inBrowser() ? player.volume : status?.volume ?? 0),
 		canSetVolume: () => !inBrowser() || player.volumeWorks,
+		isCasting: () => Boolean(status) && status.output !== 'local' && !inBrowser(),
 
 		togglePause() {
 			if (status) radio.setPaused(radio.isPlaying())
