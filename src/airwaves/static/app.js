@@ -48,12 +48,17 @@ function setOptions(select, items, current) {
 	select.dataset.items = key;
 	const chosen = select.value;
 	select.replaceChildren(...items.map(({value, label}) => new Option(label, value)));
-	select.value = items.some((item) => item.value === chosen) ? chosen : current;
+	for (const wanted of [chosen, current]) {
+		if (items.some((item) => item.value === wanted)) {
+			select.value = wanted;
+			return;
+		}
+	}
 }
 
 function setValue(control, value, changed) {
 	// Only a new value from the radio replaces a choice the user has not sent yet, and never in the control the user is on.
-	if (changed && document.activeElement !== control) {
+	if (changed && document.activeElement !== control && (control.tagName !== "SELECT" || Array.from(control.options).some((option) => option.value === String(value)))) {
 		control.value = value;
 	}
 }
@@ -67,7 +72,9 @@ function renderPlayback(updateVolume = false) {
 	const muted = inBrowser() ? player.muted : state.muted;
 	$("play").setAttribute("aria-pressed", String(playing));
 	$("mute").setAttribute("aria-pressed", String(muted));
-	$("volume").disabled = inBrowser() && !volumeWorks;
+	if (document.activeElement !== $("volume")) {
+		$("volume").disabled = inBrowser() && !volumeWorks;
+	}
 	setValue($("volume"), inBrowser() ? Math.round(player.volume * 100) : state.volume, updateVolume);
 }
 
