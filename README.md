@@ -348,11 +348,13 @@ Escape goes back to the front panel from any other screen.
 
 On a phone, open the page and add it to the home screen (in Safari, tap Share, then Add to Home Screen) to use it like an app. When you listen in the browser on an iPhone, set the volume with the phone's buttons.
 
+Press O, or the Play on button, to choose where the sound plays:
+
 * **Server speakers**: the sound card of the computer running `sdr`. Not listed when it has none. Play, Mute, and the volume control then change the sound on that computer.
 * **This browser**: press Play to listen. Play, Mute, and the volume control then only change this browser. Several browsers can listen at once. On iPhone, the volume slider is off, because iOS does not let a page set the volume. Use the volume buttons on the phone.
 * **A Sonos or AirPlay speaker**: press Find speakers first. Needs the `sonos` or `airplay` extra.
 
-The page has no control for ACARS (`a`), recording (`r`), or the signal display (`i`). It always shows the signal.
+The page has no control for ACARS or recording yet. It always shows the signal.
 
 Anyone on your network can open the page. To ask for a password, add `--web-password PASSWORD`. Browsers send it without encryption, so use it on a home network only. Any user name works.
 
