@@ -6,7 +6,7 @@ function fakeAudio({ volumeWorks = true, playResult = Promise.resolve() } = {}) 
 	const listeners = {}
 	let volume = 1
 	return {
-		src: '', muted: false, paused: true, loads: 0,
+		src: '', muted: false, paused: true, ended: false, loads: 0,
 		get volume() { return volume },
 		set volume(value) { if (volumeWorks) volume = value },
 		play() { this.paused = false; return playResult },
@@ -74,4 +74,32 @@ test('the browser pausing the audio while listening reports paused, but stop doe
 	player.stop()
 	audio.fire('pause')
 	assert.deepEqual(reasons, ['paused'])
+})
+
+test('a late pause event from stop does not stop a stream that just restarted', () => {
+	const audio = fakeAudio()
+	const player = createPlayer({ audio })
+	const reasons = []
+	player.onStopped = reason => reasons.push(reason)
+	player.start()
+	player.stop()
+	player.start()
+	audio.fire('pause')
+	assert.equal(player.listening, true)
+	assert.deepEqual(reasons, [])
+	audio.fire('pause')
+	assert.equal(player.listening, false)
+	assert.deepEqual(reasons, ['paused'])
+})
+
+test('a pause event at the end of the stream is left to the ended event', () => {
+	const audio = fakeAudio()
+	const player = createPlayer({ audio })
+	const reasons = []
+	player.onStopped = reason => reasons.push(reason)
+	player.start()
+	audio.ended = true
+	audio.fire('pause')
+	audio.fire('ended')
+	assert.deepEqual(reasons, ['stopped'])
 })

@@ -16,6 +16,8 @@ export function createPlayer({ audio }) {
 	let listening = false
 	// Each start gets a new token, so a late refusal from an older play() is ignored.
 	let token = 0
+	// Pause events the page caused with stop(), which the browser delivers later.
+	let pendingPauses = 0
 
 	const player = {
 		onStopped: null,
@@ -49,6 +51,7 @@ export function createPlayer({ audio }) {
 		stop() {
 			listening = false
 			token++
+			if (!audio.paused) pendingPauses++
 			audio.pause()
 			audio.removeAttribute('src')
 			audio.load()
@@ -61,7 +64,11 @@ export function createPlayer({ audio }) {
 		player.onStopped?.('stopped')
 	}
 	audio.addEventListener('pause', () => {
-		if (!listening) return
+		if (pendingPauses > 0) {
+			pendingPauses--
+			return
+		}
+		if (!listening || audio.ended) return
 		listening = false
 		token++
 		player.onStopped?.('paused')
