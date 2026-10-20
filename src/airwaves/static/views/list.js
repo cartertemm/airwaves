@@ -87,9 +87,12 @@ export function listScreen(root, { radio, describe, onDone }) {
 			},
 			onRemove: view.onRemove,
 		})
+		const focusedAction = actionsHolder.contains(document.activeElement) ? document.activeElement.textContent : null
 		holder.replaceChildren(list.node)
 		actionsHolder.replaceChildren(...(view.actions ?? []).map(action => el('button', { type: 'button', class: 'action', text: action.text, onClick: () => action.onClick(list.selectedId()) })))
-		if (focusList) (list.isEmpty ? close : list).focus()
+		const sameAction = focusedAction === null ? null : [...actionsHolder.children].find(button => button.textContent === focusedAction)
+		if (sameAction) sameAction.focus()
+		else if (focusList || focusedAction !== null) (list.isEmpty ? close : list).focus()
 	}
 
 	mount(root, [
