@@ -156,6 +156,7 @@ test('with a media source, the player feeds the stream to the audio one piece at
 	const player = createPlayer({ audio, ...feed })
 	player.start()
 	assert.equal(audio.src, 'blob:feed')
+	assert.equal(audio.disableRemotePlayback, true)
 	feed.sources[0].open()
 	const buffer = feed.sources[0].buffer
 	assert.equal(buffer.type, 'audio/mpeg')

@@ -31,6 +31,8 @@ export function createPlayer({ audio, MediaSource = null, fetch = null, URL = nu
 		request = new AbortController()
 		const { signal } = request
 		sourceAddress = URL.createObjectURL(source)
+		// iPhone's ManagedMediaSource does not open while the browser offers AirPlay for the audio.
+		audio.disableRemotePlayback = true
 		audio.src = sourceAddress
 		source.addEventListener('sourceopen', () => {
 			if (mine !== token) return
