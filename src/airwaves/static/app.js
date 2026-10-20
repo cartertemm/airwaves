@@ -57,9 +57,17 @@ function setOptions(select, items, current) {
 }
 
 function setValue(control, value, changed) {
-	// Only a new value from the radio replaces a choice the user has not sent yet, and never in the control the user is on.
-	if (changed && document.activeElement !== control && (control.tagName !== "SELECT" || Array.from(control.options).some((option) => option.value === String(value)))) {
-		control.value = value;
+	// A value from the radio waits in dataset.pending until it can be shown. The user's own change cancels it.
+	if (changed) {
+		control.dataset.pending = String(value);
+	}
+	const pending = control.dataset.pending;
+	if (pending === undefined || document.activeElement === control) {
+		return;
+	}
+	if (control.tagName !== "SELECT" || Array.from(control.options).some((option) => option.value === pending)) {
+		control.value = pending;
+		delete control.dataset.pending;
 	}
 }
 
@@ -143,6 +151,10 @@ function stopListening() {
 	if (state) {
 		renderPlayback();
 	}
+}
+
+for (const id of ["band", "frequency", "hd", "output", "volume"]) {
+	$(id).addEventListener("change", () => { delete $(id).dataset.pending; });
 }
 
 function submit(id, handler) {
