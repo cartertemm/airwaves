@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SDR Tuner</title>
+<link rel="stylesheet" href="app.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<main>
+<h1 id="station">SDR Tuner</h1>
+<p id="text"></p>
+<p id="signal"></p>
+<p id="alert" hidden></p>
+<p id="message" role="status"></p>
+<p id="error" role="alert"></p>
+<p id="connection" role="alert"></p>
+
+<section aria-labelledby="listen-heading">
+<h2 id="listen-heading">Listen</h2>
+<form id="output-form">
+<label for="output">Play on</label>
+<select id="output"></select>
+<button>Switch</button>
+</form>
+<button type="button" id="find-speakers">Find speakers</button>
+<div class="row">
+<button type="button" id="play" aria-pressed="false">Play</button>
+<button type="button" id="mute" aria-pressed="false">Mute</button>
+<label for="volume">Volume</label>
+<input id="volume" type="range" min="0" max="100" step="5">
+</div>
+<audio id="player" preload="none"></audio>
+</section>
+
+<section aria-labelledby="tune-heading">
+<h2 id="tune-heading">Tune</h2>
+<form id="tune-form">
+<label for="frequency">Frequency in MHz</label>
+<input id="frequency" type="number" step="any" inputmode="decimal" required>
+<button>Tune</button>
+</form>
+<div class="row">
+<button type="button" class="move" data-command="step" data-direction="-1">Step down</button>
+<button type="button" class="move" data-command="step" data-direction="1">Step up</button>
+<button type="button" class="move" data-command="seek" data-direction="-1">Seek down</button>
+<button type="button" class="move" data-command="seek" data-direction="1">Seek up</button>
+</div>
+<form id="band-form">
+<label for="band">Band</label>
+<select id="band"></select>
+<button>Change band</button>
+</form>
+<form id="hd-form">
+<label for="hd">HD program</label>
+<select id="hd"></select>
+<button>Play program</button>
+</form>
+</section>
+
+<section aria-labelledby="presets-heading">
+<h2 id="presets-heading">Presets</h2>
+<form id="preset-form">
+<label for="preset">Preset</label>
+<select id="preset"></select>
+<button>Tune preset</button>
+</form>
+<button type="button" id="save-preset">Save current station</button>
+</section>
+</main>
+</body>
+</html>

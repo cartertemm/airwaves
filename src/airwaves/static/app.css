@@ -1,0 +1,41 @@
+:root {
+	color-scheme: light dark;
+	font-family: system-ui, sans-serif;
+	line-height: 1.5;
+}
+
+main {
+	max-width: 40rem;
+	margin: 0 auto;
+	padding: 1rem;
+}
+
+form,
+.row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	margin: 0.75rem 0;
+}
+
+button,
+select,
+input {
+	font: inherit;
+	min-height: 2.75rem;
+}
+
+:focus-visible {
+	outline: 3px solid Highlight;
+	outline-offset: 2px;
+}
+
+button[aria-pressed="true"] {
+	font-weight: bold;
+}
+
+#error,
+#alert {
+	font-weight: bold;
+}
