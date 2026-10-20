@@ -99,6 +99,16 @@ test('in the browser, play, mute, and volume act on the audio element', () => {
 	assert.deepEqual(posts, [])
 })
 
+test('quick repeat presses of pause and mute on the server send the new value each time', () => {
+	const { radio, handlers, posts } = setUp()
+	handlers.onStatus(status())
+	radio.togglePause()
+	radio.togglePause()
+	radio.toggleMute()
+	radio.toggleMute()
+	assert.deepEqual(posts, [['pause', { paused: true }], ['pause', { paused: false }], ['mute', { muted: true }], ['mute', { muted: false }]])
+})
+
 test('where the page cannot set the volume, the volume keys say so', () => {
 	const { radio, handlers, spoken } = setUp({ volumeWorks: false })
 	handlers.onStatus(status({ output: 'browsers' }))

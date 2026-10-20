@@ -103,8 +103,11 @@ export function createRadio({ api, player, sfx, speak, storage }) {
 				changed()
 				return
 			}
-			send('pause', { paused: !status.paused })
-			speak(say.pauseLine(!status.paused))
+			const paused = !status.paused
+			send('pause', { paused })
+			speak(say.pauseLine(paused))
+			status = { ...status, paused }
+			changed()
 		},
 		toggleMute() {
 			if (!status) return
@@ -114,8 +117,11 @@ export function createRadio({ api, player, sfx, speak, storage }) {
 				changed()
 				return
 			}
-			send('mute', { muted: !status.muted })
-			speak(say.muteLine(!status.muted))
+			const muted = !status.muted
+			send('mute', { muted })
+			speak(say.muteLine(muted))
+			status = { ...status, muted }
+			changed()
 		},
 		setVolume(percent) {
 			if (!status) return
