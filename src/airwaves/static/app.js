@@ -116,7 +116,13 @@ function render(next) {
 	setValue($("frequency"), next.freq_mhz, changed("freq_mhz"));
 	const programs = Object.entries(next.hd_programs).sort(([a], [b]) => a - b);
 	const hdValue = next.hd_program === null ? "" : String(next.hd_program);
-	setOptions($("hd"), [{value: "", label: "Analog"}, ...programs.map(([number, label]) => ({value: number, label: `HD${Number(number) + 1} ${label}`.trim()}))], hdValue);
+	const hdOptions = [{value: "", label: "Analog"}, ...programs.map(([number, label]) => ({value: number, label: `HD${Number(number) + 1} ${label}`.trim()}))];
+	const band = next.bands.find((item) => item.name === next.band);
+	if (programs.length === 0 && band && band.hd) {
+		// Choosing HD1 starts HD. The other programs show once the station sends them.
+		hdOptions.push({value: "0", label: "HD1"});
+	}
+	setOptions($("hd"), hdOptions, hdValue);
 	setValue($("hd"), hdValue, changed("hd_program"));
 	setOptions($("preset"), next.presets.map((preset) => ({value: String(preset.number), label: `${preset.number}: ${preset.label}`})), "");
 	setOptions($("output"), next.outputs.map((output) => ({value: output, label: OUTPUT_LABELS[output] || output})), next.output);

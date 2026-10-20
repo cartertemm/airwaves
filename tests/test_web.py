@@ -112,6 +112,7 @@ def test_state_lists_bands_and_outputs(receiver):
 	async def check(client, radio):
 		state = await (await client.get("/api/state")).json()
 		assert [band["name"] for band in state["bands"]] == ["AM", "Shortwave", "FM", "Aviation", "Weather"]
+		assert [band["name"] for band in state["bands"] if band["hd"]] == ["FM"]
 		assert state["outputs"] == ["local", "browsers"]
 		assert state["frequency"] == "97.9 MHz"
 		assert state["presets"] == []

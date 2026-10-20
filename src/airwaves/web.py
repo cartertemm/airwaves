@@ -211,7 +211,7 @@ class WebServer:
 			outputs.append(status.output)
 		return {
 			**dataclasses.asdict(status),
-			"bands": [{"name": band.name, "min_mhz": band.min_mhz, "max_mhz": band.max_mhz, "step_mhz": band.step_mhz} for band in receiver.bands],
+			"bands": [{"name": band.name, "min_mhz": band.min_mhz, "max_mhz": band.max_mhz, "step_mhz": band.step_mhz, "hd": band.hd} for band in receiver.bands],
 			"presets": [{"number": number, "label": label, "available": available} for number, label, available in radio.presets()],
 			"outputs": outputs,
 			"has_sound_card": receiver.has_sound_card,
