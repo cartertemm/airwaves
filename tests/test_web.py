@@ -188,8 +188,15 @@ def test_static_files_are_served_with_their_types(receiver, tmp_path, monkeypatc
 	serve(receiver, check)
 
 
-def test_static_file_refuses_paths_outside_the_folder():
+def test_static_file_refuses_paths_outside_the_folder(tmp_path, monkeypatch):
+	folder = tmp_path / "static"
+	folder.mkdir()
+	(folder / "index.html").write_text("x", encoding="utf-8")
+	(tmp_path / "outside.js").write_text("x", encoding="utf-8")
+	monkeypatch.setattr(web, "STATIC_FOLDER", str(folder))
 	assert web.static_file("../web.py") is None
+	assert web.static_file("../outside.js") is None
+	assert web.static_file(str(tmp_path / "outside.js")) is None
 	assert web.static_file("index.html") is not None
 
 
