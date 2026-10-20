@@ -330,6 +330,21 @@ The page can tune, step, seek, change bands, choose HD programs and presets, and
 * **This browser**: press Play to listen. Play, Mute, and the volume control then only change this browser. Several browsers can listen at once. On iPhone, the volume slider is off, because iOS does not let a page set the volume. Use the volume buttons on the phone.
 * **A Sonos or AirPlay speaker**: press Find speakers first. Needs the `sonos` or `airplay` extra.
 
+The page controls match the keys like this:
+
+* Space: Play
+* `_` and `+`: the volume control
+* `m`: Mute
+* `s` and `w`: Step down and Step up
+* `S` and `W`: Seek down and Seek up
+* `t`: the frequency box and Tune
+* `d` and `D`: the HD program list and Play program. Choose HD1 to check the station for HD.
+* `p`: the preset list and Tune preset
+* `P`: Save current station
+* `c`: Find speakers, then "Play on" and Switch
+
+The page has no control for ACARS (`a`), recording (`r`), or the signal display (`i`). It always shows the signal.
+
 Anyone on your network can open the page. To ask for a password, add `--web-password PASSWORD`. Browsers send it without encryption, so use it on a home network only. Any user name works.
 
 With more than one dongle, choose one with `--device N`, counting from 1. `--sonos` and `--airplay` need a speaker name with `--web`. Messages that the page shows also print in the console.
