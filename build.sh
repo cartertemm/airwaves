@@ -11,7 +11,7 @@ RTLSDR_PREFIX="$PWD/build/rtlsdr-prefix"
 if [ "$(uname)" = "Darwin" ]; then
 	# PyAudio builds against PortAudio during uv sync.
 	brew install librtlsdr portaudio
-	uv sync --extra sonos --extra airplay
+	uv sync --extra sonos --extra airplay --extra web
 	if [ ! -f src/airwaves/libnrsc5.dylib ]; then
 		./build-nrsc5.sh
 	fi
@@ -28,7 +28,7 @@ else
 	cmake -S "$RTLSDR_SOURCE" -B "$RTLSDR_SOURCE/build" -DDETACH_KERNEL_DRIVER=ON -DCMAKE_INSTALL_PREFIX="$RTLSDR_PREFIX" -DCMAKE_INSTALL_LIBDIR=lib
 	cmake --build "$RTLSDR_SOURCE/build"
 	cmake --install "$RTLSDR_SOURCE/build"
-	uv sync --extra sonos --extra airplay
+	uv sync --extra sonos --extra airplay --extra web
 	# Always rebuild, so libnrsc5 links to this driver and not to the distribution's.
 	RTLSDR_PREFIX="$RTLSDR_PREFIX" ./build-nrsc5.sh
 fi

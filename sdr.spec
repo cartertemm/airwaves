@@ -4,8 +4,8 @@ import sys
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
-# sdr and nrsc5 load their libraries by path, and the casting modules are
-# only imported when casting, so PyInstaller cannot find them alone.
+# sdr and nrsc5 load their libraries by path, and the casting modules and the web frontend
+# are only imported when used, so PyInstaller cannot find them alone.
 if sys.platform == "darwin":
 	sys.path.insert(0, os.path.join(SPECPATH, "src"))
 	from airwaves.libraries import NRSC5_LIBRARY, RTLSDR_LIBRARIES, library_path
@@ -22,10 +22,10 @@ elif sys.platform == "linux":
 else:
 	dlls = ("libnrsc5.dll", "rtlsdr.dll")
 	binaries = [(os.path.join(SPECPATH, "src", "airwaves", name), "airwaves") for name in dlls]
-# airportsdata reads its airport list from its own folder.
-datas = collect_data_files("airportsdata")
-hiddenimports = collect_submodules("pyatv") + collect_submodules("soco")
-hiddenimports += ["airwaves.sonos_cast", "airwaves.airplay_cast"]
+# airportsdata reads its airport list from its own folder, and the web frontend reads its page from airwaves/static.
+datas = collect_data_files("airportsdata") + collect_data_files("airwaves", subdir="static")
+hiddenimports = collect_submodules("pyatv") + collect_submodules("soco") + collect_submodules("aiohttp")
+hiddenimports += ["airwaves.sonos_cast", "airwaves.airplay_cast", "airwaves.radio", "airwaves.web"]
 
 a = Analysis(
 	[os.path.join(SPECPATH, "build", "sdr_main.py")],

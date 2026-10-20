@@ -192,6 +192,7 @@ KEY_POLL_SECONDS = 0.02
 HELP_KEYS = ("space: play/pause", "_: volume down", "+: volume up", "s: back", "w: forward", "S: scan back", "W: scan forward", "t: enter frequency", "P: save preset", "p: choose preset", "m: mute", "i: show/hide signal", "d: next HD channel", "D: previous HD channel", "a: ACARS on/off", "c: cast to Sonos or AirPlay", "r: record on/off", "h: help", "Ctrl+C: quit")
 HELP_KEYS_PER_LINE = 3
 CAST_KINDS = ("sonos", "airplay")
+DEFAULT_WEB_PORT = 8000
 RECORD_FORMATS = ("wav", "mp3")
 ACARS_LOG_NAME = "flights.log"
 RECORD_TIME_FORMAT = "%Y-%m-%d %H-%M-%S"
@@ -1525,10 +1526,14 @@ def band_ranges(bands):
 	return " or ".join(f"{band.min_mhz} to {band.max_mhz}" for band in bands)
 
 
+def describe_device(device):
+	return f"{device.name} (serial {device.serial})"
+
+
 def choose_device(devices):
 	if len(devices) == 1:
 		return devices[0]
-	index = menu("Choose a device (blank to cancel): ", [f"{device.name} (serial {device.serial})" for device in devices])
+	index = menu("Choose a device (blank to cancel): ", [describe_device(device) for device in devices])
 	return None if index is None else devices[index]
 
 
@@ -1759,6 +1764,9 @@ def main():
 	cast = parser.add_mutually_exclusive_group()
 	cast.add_argument("--sonos", nargs="?", const="", metavar="SPEAKER", help="Cast to the Sonos group with this speaker in it. Without a name, choose from a list.")
 	cast.add_argument("--airplay", nargs="?", const="", metavar="DEVICE", help="Cast to this AirPlay device. Without a name, choose from a list.")
+	parser.add_argument("--device", type=int, metavar="N", help="Use the Nth dongle, counting from 1. Without it, choose from a list when there is more than one.")
+	parser.add_argument("--web", nargs="?", type=int, const=DEFAULT_WEB_PORT, metavar="PORT", help=f"Control the radio from a browser instead of the keyboard. Default port is {DEFAULT_WEB_PORT}. Needs the web extra.")
+	parser.add_argument("--web-password", metavar="PASSWORD", help="Ask browsers for this password. Needs --web.")
 	args = parser.parse_args()
 	print(VERSION_TEXT)
 	# Library log messages would print over the status line. Without a handler, the first one also turns on console logging for all of them.
@@ -1773,6 +1781,15 @@ def main():
 		parser.error("--alert-mode needs a NOAA weather radio frequency")
 	if args.alert_mode and args.acars:
 		parser.error("--alert-mode cannot be used with --acars")
+	if args.web_password is not None and args.web is None:
+		parser.error("--web-password needs --web")
+	if args.web is not None and "" in (args.sonos, args.airplay):
+		parser.error("with --web, --sonos and --airplay need a speaker name")
+	if args.web is not None:
+		try:
+			from . import web
+		except ImportError:
+			parser.error("--web needs the web extra: uv sync --extra web")
 	try:
 		devices = list_devices()
 	except LibUSBError as error:
@@ -1781,9 +1798,17 @@ def main():
 	if not devices:
 		print("error: No RTL-SDR devices found.")
 		return 1
-	device = choose_device(devices)
-	if device is None:
-		return 0
+	if args.device is not None or (args.web is not None and len(devices) > 1):
+		if args.device is None or not 1 <= args.device <= len(devices):
+			print("error: Choose a dongle with --device:" if args.device is None else f"error: There is no dongle {args.device}. The dongles are:")
+			for number, device in enumerate(devices, 1):
+				print(f"{number}: {describe_device(device)}")
+			return 1
+		device = devices[args.device - 1]
+	else:
+		device = choose_device(devices)
+		if device is None:
+			return 0
 	try:
 		log = open(args.log, "a", encoding="utf-8") if args.log else None
 	except OSError as error:
@@ -1794,7 +1819,7 @@ def main():
 	except LibUSBError as error:
 		print(f"error: {dongle_error_text(error)}")
 		return 1
-	if not receiver.has_sound_card and args.sonos is None and args.airplay is None:
+	if not receiver.has_sound_card and args.web is None and args.sonos is None and args.airplay is None:
 		receiver.stop()
 		print("error: No sound card found. Cast with --sonos or --airplay instead.")
 		return 1
@@ -1805,7 +1830,11 @@ def main():
 	from .radio import Radio
 	radio = Radio(receiver, args.alert_mode, log, args.record_format, args.record_dir)
 	with log or contextlib.nullcontext():
-		RadioCLI(radio, args.sonos, args.airplay).run()
+		if args.web is not None:
+			if not web.run(radio, args.web, args.web_password, args.sonos, args.airplay):
+				return 1
+		else:
+			RadioCLI(radio, args.sonos, args.airplay).run()
 	if receiver.error:
 		print(f"error: {receiver.error}")
 		return 1
