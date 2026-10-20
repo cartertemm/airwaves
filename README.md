@@ -313,7 +313,7 @@ The first time you cast, Windows or macOS may ask whether Python can use the net
 
 ### Using a browser
 
-`sdr --web` runs the radio with no keyboard controls and serves a page that any browser on your network can use. This is the way to run `sdr` on a computer with no screen, such as a home server or a Raspberry Pi. It needs the `web` extra.
+`sdr --web` runs the radio with no terminal keyboard controls and serves a page that any browser on your network can use. This is the way to run `sdr` on a computer with no screen, such as a home server or a Raspberry Pi. It needs the `web` extra.
 
 ```
 uv sync --extra sonos --extra airplay --extra web
@@ -330,7 +330,7 @@ The page works like a radio's front panel. Every command is a button, and also a
 | --- | --- |
 | Space | Play or pause |
 | Left, Right | Step down, step up |
-| Shift+Left, Shift+Right | Seek to the previous or next station |
+| Shift+Left, Shift+Right (or Ctrl+Left, Ctrl+Right) | Seek to the previous or next station |
 | Up, Down | Volume up, volume down |
 | M | Mute or unmute |
 | F | Type a frequency |
