@@ -241,6 +241,7 @@ class Band:
 	hd: bool = False
 	# Channels decoded as ACARS. The capture centers between the lowest and highest.
 	acars_channels: tuple = ()
+	name: str = ""
 
 	def format(self, freq_mhz):
 		return f"{freq_mhz * 1000:.0f} kHz" if self.khz else f"{freq_mhz:.{self.digits}f} MHz"
@@ -256,12 +257,12 @@ class Band:
 		return round((self.min_mhz + self.max_mhz) / 2 * 1e6)
 
 
-FM = Band(min_mhz=87.5, max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6, hd=True)
-NOAA = Band(min_mhz=162.4, max_mhz=162.55, step_mhz=0.025, digits=3, max_deviation=5000, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, alerts=True)
-AM = Band(min_mhz=0.53, max_mhz=1.7, step_mhz=0.01, digits=2, max_deviation=None, narrow_cutoff=5000, audio_cutoff=5000, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13, khz=True)
+FM = Band(name="FM", min_mhz=87.5,max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6, hd=True)
+NOAA = Band(name="Weather", min_mhz=162.4,max_mhz=162.55, step_mhz=0.025, digits=3, max_deviation=5000, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, alerts=True)
+AM = Band(name="AM", min_mhz=0.53,max_mhz=1.7, step_mhz=0.01, digits=2, max_deviation=None, narrow_cutoff=5000, audio_cutoff=5000, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13, khz=True)
 # Direct sampling stops at 14.4 MHz, half of the dongle's 28.8 MHz converter rate.
-SW = Band(min_mhz=2.3, max_mhz=14.4, step_mhz=0.005, digits=3, max_deviation=None, narrow_cutoff=4500, audio_cutoff=4500, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13)
-AIR = Band(min_mhz=118.0, max_mhz=136.975, step_mhz=0.025, digits=3, max_deviation=None, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, am=True)
+SW = Band(name="Shortwave", min_mhz=2.3,max_mhz=14.4, step_mhz=0.005, digits=3, max_deviation=None, narrow_cutoff=4500, audio_cutoff=4500, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13)
+AIR = Band(name="Aviation", min_mhz=118.0,max_mhz=136.975, step_mhz=0.025, digits=3, max_deviation=None, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, am=True)
 # Europe uses 50 microsecond de-emphasis, a 9 kHz AM channel grid, and has no NOAA weather radio.
 FM_EU = replace(FM, deemphasis_tau=50e-6)
 AM_EU = replace(AM, min_mhz=0.531, max_mhz=1.602, step_mhz=0.009)
@@ -1049,7 +1050,12 @@ class Receiver:
 		self.reset_hd()
 		self.running = True
 		self.audio = pyaudio.PyAudio()
-		self.stream = self.audio.open(format=pyaudio.paFloat32, channels=2, rate=AUDIO_RATE, output=True, stream_callback=self.fill_audio)
+		try:
+			self.stream = self.audio.open(format=pyaudio.paFloat32, channels=2, rate=AUDIO_RATE, output=True, stream_callback=self.fill_audio)
+		except OSError:
+			# A headless computer may have no sound card. Casting and the web frontend still work.
+			self.audio.terminate()
+			self.audio = self.stream = None
 		self.tune(freq_mhz)
 		self.threads = [threading.Thread(target=self.guard, args=(target,), daemon=True) for target in (self.read, self.demodulate)]
 
@@ -1337,12 +1343,18 @@ class Receiver:
 		return (audio * gain).tobytes(), pyaudio.paContinue
 
 	@property
+	def has_sound_card(self):
+		return self.stream is not None
+
+	@property
 	def local_audio(self):
-		"""Whether the audio plays on this computer's sound card."""
-		return self.stream.is_active()
+		"""Whether the audio plays on this computer's sound card. Always False without one."""
+		return self.has_sound_card and self.stream.is_active()
 
 	@local_audio.setter
 	def local_audio(self, enabled):
+		if not self.has_sound_card:
+			return
 		if enabled:
 			self.stream.start_stream()
 		else:
@@ -1402,9 +1414,10 @@ class Receiver:
 		with self.sdr_lock:
 			if self.hd:
 				self.close_hd()
-		self.stream.stop_stream()
-		self.stream.close()
-		self.audio.terminate()
+		if self.has_sound_card:
+			self.stream.stop_stream()
+			self.stream.close()
+			self.audio.terminate()
 		if self.sdr:
 			self.sdr.close()
 
@@ -2088,6 +2101,10 @@ def main():
 		receiver = Receiver(device.index, args.frequency, region)
 	except LibUSBError as error:
 		print(f"error: {dongle_error_text(error)}")
+		return 1
+	if not receiver.has_sound_card and args.sonos is None and args.airplay is None:
+		receiver.stop()
+		print("error: No sound card found. Cast with --sonos or --airplay instead.")
 		return 1
 	receiver.county = args.county
 	receiver.volume = config.get_int(config.load(), "volume", DEFAULT_VOLUME, 0, MAX_VOLUME)
