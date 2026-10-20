@@ -16,14 +16,7 @@ const storage = createStorage('sdr')
 const speech = createSpeech({ storage, defaultMode: 'aria' })
 speech.init()
 
-// iPhone has only ManagedMediaSource, which is under test: it is used only with ?feed in the address.
-const testingFeed = new URLSearchParams(location.search).has('feed')
-const feedSource = [window.MediaSource, testingFeed ? window.ManagedMediaSource : null].find(source => source?.isTypeSupported('audio/mpeg')) ?? null
-if (testingFeed) {
-	const managed = window.ManagedMediaSource ? (window.ManagedMediaSource.isTypeSupported('audio/mpeg') ? 'plays MP3' : 'does not play MP3') : 'missing'
-	const used = feedSource === window.MediaSource ? 'MediaSource' : feedSource ? 'ManagedMediaSource' : 'stream address'
-	document.body.prepend(Object.assign(document.createElement('p'), { textContent: `Test player: ${used}. ManagedMediaSource: ${managed}.` }))
-}
+const feedSource = [window.MediaSource, window.ManagedMediaSource].find(source => source?.isTypeSupported('audio/mpeg')) ?? null
 const player = createPlayer({ audio: document.getElementById('player'), MediaSource: feedSource, fetch: window.fetch.bind(window), URL: window.URL })
 let radio = null
 const sfx = createSfx({ isEnabled: () => radio?.settings.sounds ?? true })
