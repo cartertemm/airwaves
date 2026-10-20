@@ -38,7 +38,7 @@ export function keyboardList({ label, items, onChoose, onRemove = null, emptyTex
 		if (buttons.length === 0 || event.ctrlKey || event.altKey || event.metaKey) return
 		const moves = { ArrowDown: index + 1, ArrowUp: index - 1, PageDown: index + PAGE, PageUp: index - PAGE, Home: 0, End: buttons.length - 1 }
 		if (event.key in moves) highlight(moves[event.key])
-		else if (onRemove && event.key === 'Delete') onRemove(items[index].id)
+		else if (onRemove && (event.key === 'Delete' || event.key === 'Backspace')) onRemove(items[index].id)
 		else return
 		event.preventDefault()
 	}
@@ -54,13 +54,14 @@ export function keyboardList({ label, items, onChoose, onRemove = null, emptyTex
 /**
  * A sheet with a heading, a keyboard list, optional action buttons, and Close.
  * props: { radio, describe, onDone }. describe(radio) returns
- * { title, items, onChoose(id), onRemove?(id), emptyText, actions?: [{ text, onClick }] }.
+ * { title, items, onChoose(id), onRemove?(id), emptyText, actions?: [{ text, onClick(highlightedId) }] }.
  * It is called again whenever the radio changes. Only the list is rebuilt, and
  * only when its items change, so focus on the other buttons stays put.
  */
 export function listScreen(root, { radio, describe, onDone }) {
 	const first = describe(radio)
 	const holder = el('div')
+	const actionsHolder = el('div', { class: 'actions' })
 	const close = el('button', { type: 'button', text: 'Close', onClick: onDone })
 	let shown = null
 	let list = null
@@ -87,6 +88,7 @@ export function listScreen(root, { radio, describe, onDone }) {
 			onRemove: view.onRemove,
 		})
 		holder.replaceChildren(list.node)
+		actionsHolder.replaceChildren(...(view.actions ?? []).map(action => el('button', { type: 'button', class: 'action', text: action.text, onClick: () => action.onClick(list.selectedId()) })))
 		if (focusList) (list.isEmpty ? close : list).focus()
 	}
 
@@ -96,7 +98,7 @@ export function listScreen(root, { radio, describe, onDone }) {
 			{ class: 'sheet' },
 			el('div', { class: 'sheet-head' }, el('h1', { text: first.title }), close),
 			holder,
-			...(first.actions ?? []).map(action => el('button', { type: 'button', class: 'action', text: action.text, onClick: action.onClick })),
+			actionsHolder,
 		),
 	])
 	draw()

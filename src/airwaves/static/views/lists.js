@@ -10,7 +10,10 @@ export function presetsList(radio) {
 		emptyText: 'No presets yet. On the front panel, press Shift and a number to save this station to that preset.',
 		onChoose: id => radio.tunePreset(Number(id)),
 		onRemove: id => radio.deletePreset(Number(id)),
-		actions: [{ text: 'Save this station to the next free preset', onClick: () => radio.savePreset() }],
+		actions: [
+			{ text: 'Save this station to the next free preset', onClick: () => radio.savePreset() },
+			...(presets.length > 0 ? [{ text: 'Clear the highlighted preset', onClick: id => id && radio.deletePreset(Number(id)) }] : []),
+		],
 	}
 }
 

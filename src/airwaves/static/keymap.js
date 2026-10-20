@@ -42,7 +42,7 @@ export const KEYMAP = {
 	list: [
 		{ command: 'move', keys: ['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'], label: 'Move through the list', local: true },
 		{ command: 'choose', keys: ['Enter'], label: 'Choose the highlighted item', local: true },
-		{ command: 'remove', keys: ['Delete'], label: 'In presets: clear the highlighted preset', local: true },
+		{ command: 'remove', keys: ['Delete', 'Backspace'], label: 'In presets: clear the highlighted preset (Delete or Backspace)', local: true },
 		{ command: 'close', keys: ['Escape'], label: 'Back to the front panel', local: true },
 	],
 }
