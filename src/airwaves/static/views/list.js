@@ -10,9 +10,10 @@ import { el, mount } from 'audiogame-utils'
 const PAGE = 10
 
 /** items: [{ id, label, current }]. Callbacks get the item id. onRemove is optional. startId picks the highlighted item, otherwise the current one. */
-export function keyboardList({ label, items, onChoose, onRemove = null, emptyText, startId = null }) {
+export function keyboardList({ label, items, onChoose, onRemove = null, emptyText, startId = null, startIndex = null }) {
 	const start = items.findIndex(item => item.id === startId)
-	let index = start >= 0 ? start : Math.max(0, items.findIndex(item => item.current))
+	const fallback = startIndex === null ? Math.max(0, items.findIndex(item => item.current)) : Math.max(0, Math.min(items.length - 1, startIndex))
+	let index = start >= 0 ? start : fallback
 	const buttons = items.map((item, position) =>
 		el('button', {
 			type: 'button',
@@ -47,7 +48,7 @@ export function keyboardList({ label, items, onChoose, onRemove = null, emptyTex
 		{ role: 'application', 'aria-label': label, class: 'list', onKeydown: onKeyDown },
 		buttons.length > 0 ? el('ul', {}, ...buttons.map(button => el('li', {}, button))) : el('p', { class: 'empty', text: emptyText }),
 	)
-	return { node, isEmpty: buttons.length === 0, focus: () => buttons[index]?.focus(), selectedId: () => items[index]?.id ?? null }
+	return { node, isEmpty: buttons.length === 0, focus: () => buttons[index]?.focus(), selectedId: () => items[index]?.id ?? null, selectedIndex: () => index }
 }
 
 /**
@@ -70,11 +71,13 @@ export function listScreen(root, { radio, describe, onDone }) {
 		if (key === shown) return
 		const focusList = list === null || list.node.contains(document.activeElement)
 		const startId = list?.selectedId() ?? null
+		const startIndex = list?.selectedIndex() ?? null
 		shown = key
 		list = keyboardList({
 			label: view.title,
 			items: view.items,
 			startId,
+			startIndex,
 			emptyText: view.emptyText,
 			// Back to the front panel first: screen readers cut speech off when focus moves.
 			onChoose: id => {
