@@ -97,6 +97,12 @@ Then run each command with `uv run`, for example `uv run sdr 97.9` or `uv run tu
 uv sync --extra sonos --extra airplay
 ```
 
+To control the radio from a browser, install the `web` extra:
+
+```
+uv sync --extra web
+```
+
 To use the commands from any folder without `uv run`, install them as tools instead:
 
 ```
@@ -309,6 +315,27 @@ Casting replaces the Sonos queue for the group. When you stop casting or quit, t
 
 The first time you cast, Windows or macOS may ask whether Python can use the network. Allow it (on Windows, for private networks), otherwise the speakers will not be able to reach the script.
 
+### Using a browser
+
+`sdr --web` runs the radio with no keyboard controls and serves a page that any browser on your network can use. This is the way to run `sdr` on a computer with no screen, such as a home server or a Raspberry Pi. It needs the `web` extra.
+
+```
+uv sync --extra web
+uv run sdr 97.9 --web
+```
+
+`sdr` prints the address to open, such as `http://192.168.1.20:8000`. Use `--web 8080` for another port. If the port is in use, `sdr` prints an error and exits.
+
+The page can tune, step, seek, change bands, choose HD programs and presets, and show the station name, RDS text, signal, and weather alerts. "Play on" chooses where the sound goes. Press Switch to apply your choice.
+
+* **Server speakers**: the sound card of the computer running `sdr`. Not listed when it has none. Play, Mute, and the volume control then change the sound on that computer.
+* **This browser**: press Play to listen. Play, Mute, and the volume control then only change this browser. Several browsers can listen at once. On iPhone, the volume slider is off, because iOS does not let a page set the volume. Use the volume buttons on the phone.
+* **A Sonos or AirPlay speaker**: press Find speakers first. Needs the `sonos` or `airplay` extra.
+
+Anyone on your network can open the page. To ask for a password, add `--web-password PASSWORD`. Browsers send it without encryption, so use it on a home network only. Any user name works.
+
+With more than one dongle, choose one with `--device N`, counting from 1. `--sonos` and `--airplay` need a speaker name with `--web`. Messages that the page shows also print in the console.
+
 ### Using the receiver from another program
 
 `sdr` can also be imported from another program. The receiver does not need the keyboard controls:
@@ -352,6 +379,9 @@ receiver.stop()
 | `county` | A county FIPS code. When set, alerts for other counties are ignored. Alerts for the whole US always show. |
 | `alert`, `on_alert` | The latest weather alert, an `sdr.Alert` with `name`, `event`, `locations`, `issued`, `expires`, and `describe()`. `on_alert` is called with each new alert from a background thread. |
 | `running`, `error` | `running` becomes false if the dongle fails, and `error` holds the cause. |
+| `has_sound_card` | False when no sound card could be opened. `local_audio` then stays False; cast or use the web frontend instead. |
+
+Frontends can use `airwaves.radio.Radio(receiver)` for presets, casting, HD stepping, and alerts. Assign `on_status` and `on_message` to get callbacks, and call `status()` for the current state.
 
 ## Other commands
 
