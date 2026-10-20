@@ -257,12 +257,12 @@ class Band:
 		return round((self.min_mhz + self.max_mhz) / 2 * 1e6)
 
 
-FM = Band(name="FM", min_mhz=87.5,max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6, hd=True)
-NOAA = Band(name="Weather", min_mhz=162.4,max_mhz=162.55, step_mhz=0.025, digits=3, max_deviation=5000, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, alerts=True)
-AM = Band(name="AM", min_mhz=0.53,max_mhz=1.7, step_mhz=0.01, digits=2, max_deviation=None, narrow_cutoff=5000, audio_cutoff=5000, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13, khz=True)
+FM = Band(name="FM", min_mhz=87.5, max_mhz=108.0, step_mhz=0.1, digits=1, max_deviation=75000, narrow_cutoff=None, audio_cutoff=15000, stereo=True, deemphasis_tau=75e-6, hd=True)
+NOAA = Band(name="Weather", min_mhz=162.4, max_mhz=162.55, step_mhz=0.025, digits=3, max_deviation=5000, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, alerts=True)
+AM = Band(name="AM", min_mhz=0.53, max_mhz=1.7, step_mhz=0.01, digits=2, max_deviation=None, narrow_cutoff=5000, audio_cutoff=5000, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13, khz=True)
 # Direct sampling stops at 14.4 MHz, half of the dongle's 28.8 MHz converter rate.
-SW = Band(name="Shortwave", min_mhz=2.3,max_mhz=14.4, step_mhz=0.005, digits=3, max_deviation=None, narrow_cutoff=4500, audio_cutoff=4500, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13)
-AIR = Band(name="Aviation", min_mhz=118.0,max_mhz=136.975, step_mhz=0.025, digits=3, max_deviation=None, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, am=True)
+SW = Band(name="Shortwave", min_mhz=2.3, max_mhz=14.4, step_mhz=0.005, digits=3, max_deviation=None, narrow_cutoff=4500, audio_cutoff=4500, stereo=False, deemphasis_tau=None, am=True, direct_sampling=True, scan_threshold_db=13)
+AIR = Band(name="Aviation", min_mhz=118.0, max_mhz=136.975, step_mhz=0.025, digits=3, max_deviation=None, narrow_cutoff=8000, audio_cutoff=4000, stereo=False, deemphasis_tau=None, am=True)
 # Europe uses 50 microsecond de-emphasis, a 9 kHz AM channel grid, and has no NOAA weather radio.
 FM_EU = replace(FM, deemphasis_tau=50e-6)
 AM_EU = replace(AM, min_mhz=0.531, max_mhz=1.602, step_mhz=0.009)
