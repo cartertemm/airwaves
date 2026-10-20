@@ -207,6 +207,13 @@ test('a lost connection is said once, and its return once', () => {
 	assert.deepEqual(spoken.map(([text]) => text), ['Connection to the radio lost. Reconnecting.', 'Connected to the radio again.'])
 })
 
+test('preset keys before the first status say nothing', () => {
+	const { radio, posts, spoken } = setUp()
+	radio.tunePreset(1)
+	assert.deepEqual(spoken, [])
+	assert.deepEqual(posts, [])
+})
+
 test('presets: an empty slot is said, saving posts the slot', () => {
 	const { radio, handlers, posts, spoken, sounds } = setUp()
 	handlers.onStatus(status())

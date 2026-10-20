@@ -211,7 +211,8 @@ export function createRadio({ api, player, sfx, speak, storage }) {
 		},
 
 		tunePreset(number) {
-			if (!status?.presets.some(preset => preset.number === number)) {
+			if (!status) return
+			if (!status.presets.some(preset => preset.number === number)) {
 				speak(say.emptyPresetLine(number), true)
 				return
 			}
