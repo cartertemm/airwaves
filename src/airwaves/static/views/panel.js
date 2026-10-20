@@ -49,7 +49,7 @@ export function panelScreen(root, { radio, commands }) {
 	const button = (text, command) => el('button', { type: 'button', text, onClick: () => commands[command]() })
 
 	const playIcon = el('span', { class: 'icon-slot' })
-	const play = el('button', { type: 'button', class: 'play', onClick: () => commands.togglePause() }, playIcon)
+	const play = el('button', { type: 'button', class: 'play', 'aria-label': 'Play', onClick: () => commands.togglePause() }, playIcon)
 	const muteIcon = el('span', { class: 'icon-slot' })
 	const mute = el('button', { type: 'button', class: 'mute', 'aria-label': 'Mute', onClick: () => commands.toggleMute() }, muteIcon)
 	const volume = el('input', { type: 'range', id: 'volume', min: '0', max: '100', step: '1', 'aria-label': 'Volume', onChange: () => radio.setVolume(Number(volume.value)) })

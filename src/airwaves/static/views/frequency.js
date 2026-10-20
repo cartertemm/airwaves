@@ -2,8 +2,8 @@
 
 import { el, mount } from 'audiogame-utils'
 
-/** props: { radio, onDone } */
-export function frequencyScreen(root, { radio, onDone }) {
+/** props: { radio, speak, onDone } */
+export function frequencyScreen(root, { radio, speak, onDone }) {
 	const input = el('input', { id: 'frequency', type: 'text', inputmode: 'decimal', autocomplete: 'off', autoFocus: true, value: radio.status ? String(radio.status.freq_mhz) : '' })
 	const form = el(
 		'form',
@@ -12,6 +12,7 @@ export function frequencyScreen(root, { radio, onDone }) {
 				event.preventDefault()
 				const mhz = Number(input.value.trim())
 				if (input.value.trim() === '' || !Number.isFinite(mhz)) {
+					speak('Type a frequency in MHz, like 97.9.')
 					input.select()
 					return
 				}

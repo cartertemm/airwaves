@@ -40,7 +40,7 @@ const commands = {
 	volumeUp: () => radio.changeVolume(1),
 	volumeDown: () => radio.changeVolume(-1),
 	toggleMute: () => radio.toggleMute(),
-	openFrequency: () => router.go(frequencyScreen, { radio, onDone: back }),
+	openFrequency: () => router.go(frequencyScreen, { radio, speak: text => speech.speak(text, true), onDone: back }),
 	tunePreset: combo => radio.tunePreset(presetNumberOf(combo)),
 	savePreset: combo => radio.savePreset(presetNumberOf(combo)),
 	addPreset: () => radio.savePreset(),
