@@ -174,9 +174,13 @@ class StreamServer:
 		next_time = time.monotonic()
 		while self.running:
 			audio = self.read_audio(frames)
-			data = bytes(encoder.encode((np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes()))
 			with self.clients_lock:
-				sends = [(client, data) for client in self.clients] + [(client, self.silence) for client in self.pending]
+				clients = list(self.clients)
+				sends = [(client, self.silence) for client in self.pending]
+			# With no one to hear it, the audio is read so it stays current, but not encoded.
+			if clients:
+				data = bytes(encoder.encode((np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes()))
+				sends += [(client, data) for client in clients]
 			for client, chunk in sends:
 				try:
 					client.put_nowait(chunk)
