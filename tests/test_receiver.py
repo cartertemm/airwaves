@@ -13,10 +13,11 @@ class NoSoundCard:
 
 class FakeRtlSdr:
 	def __init__(self, device_index):
-		pass
+		self.gain = None
 
 	def set_direct_sampling(self, mode):
-		pass
+		# Like the driver, changing mode resets the tuner's gain.
+		self.gain = None
 
 	def close(self):
 		pass
@@ -36,4 +37,24 @@ def test_receiver_runs_without_a_sound_card(monkeypatch):
 	assert not receiver.local_audio
 	receiver.local_audio = True
 	assert not receiver.local_audio
+	receiver.stop()
+
+
+def test_receiver_keeps_its_gain_when_the_sampling_mode_changes(monkeypatch):
+	monkeypatch.setattr(sdr.pyaudio, "PyAudio", NoSoundCard)
+	monkeypatch.setattr(sdr, "RtlSdr", FakeRtlSdr)
+	receiver = sdr.Receiver(0, 97.9, "us", 30.0)
+	assert receiver.sdr.gain == 30.0
+	receiver.tune(1.4)
+	assert receiver.sdr.gain == 30.0
+	receiver.tune(97.9)
+	assert receiver.sdr.gain == 30.0
+	receiver.stop()
+
+
+def test_receiver_gain_is_auto_by_default(monkeypatch):
+	monkeypatch.setattr(sdr.pyaudio, "PyAudio", NoSoundCard)
+	monkeypatch.setattr(sdr, "RtlSdr", FakeRtlSdr)
+	receiver = sdr.Receiver(0, 97.9, "us")
+	assert receiver.sdr.gain == sdr.AUTO_GAIN
 	receiver.stop()

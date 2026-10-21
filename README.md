@@ -187,6 +187,12 @@ The script picks US or European band settings from the country in your system se
 uv run sdr 97.9 --region eu
 ```
 
+The dongle sets its own gain by default. If strong stations nearby cause noise, or weak stations do not come in, set the gain yourself with `--gain`, in dB from 0 to 50. The dongle uses the closest gain it has. To use a gain every time, add it to `airwaves.conf`, for example `gain = 30`. `--gain auto` uses automatic gain for one run, even when the file has a gain:
+
+```
+uv run sdr 97.9 --gain 30
+```
+
 On weather radio, each alert prints on its own line, for example `ALERT: Tornado Warning until 3:45 PM for 004013`, and stays on the status line until it expires. The numbers are county FIPS codes. To only get alerts for your county, add `--county` with its FIPS code. Alerts for the whole US always show. To keep the sound off until an alert arrives, like a weather radio, add `--alert-mode`:
 
 ```
@@ -383,7 +389,7 @@ receiver.stop()
 | Member | Purpose |
 | --- | --- |
 | `list_devices()` | Returns the connected dongles, each with `index`, `name`, and `serial`. |
-| `Receiver(device_index, freq_mhz, region=None)` | Opens a dongle. `region` is `"us"` or `"eu"`. Without it, the receiver uses `detect_region()`, which reads the system's country setting. |
+| `Receiver(device_index, freq_mhz, region=None, gain="auto")` | Opens a dongle. `region` is `"us"` or `"eu"`. Without it, the receiver uses `detect_region()`, which reads the system's country setting. `gain` is `"auto"` or the tuner gain in dB. |
 | `start()`, `stop()` | Start and stop the dongle and audio. |
 | `tune(freq_mhz)`, `freq_mhz` | Change and read the frequency. AM, shortwave, FM, aviation, and NOAA frequencies all work. Other frequencies raise `ValueError`. |
 | `band` | The current band, `sdr.AM`, `sdr.SW`, `sdr.FM`, `sdr.AIR`, or `sdr.NOAA`. While ACARS decodes, it is `sdr.ACARS` or `sdr.ACARS_EU`. |

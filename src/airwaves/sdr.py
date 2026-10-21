@@ -75,7 +75,9 @@ AUDIO_DECIMATION = MPX_RATE // AUDIO_RATE
 # A quarter of the sample rate makes the mixer the repeating sequence 1, -j, -1, j.
 TUNE_OFFSET = SDR_RATE // 4
 BLOCK_SIZE = 153600
-SDR_GAIN = "auto"
+AUTO_GAIN = "auto"
+# The R820T tuner's highest gain is 49.6 dB. The driver picks the closest gain the tuner has.
+MAX_GAIN_DB = 50
 
 CHANNEL_CUTOFF = 120000
 CHANNEL_TAPS = 151
@@ -1017,11 +1019,12 @@ class Receiver:
 
 	Call start() to begin playing and stop() when done. on_status_change, if set, is called with no arguments from a background thread when stereo, signal_db, rds_name, rds_text, or the HD state changes."""
 
-	def __init__(self, device_index, freq_mhz, region=None):
+	def __init__(self, device_index, freq_mhz, region=None, gain=AUTO_GAIN):
 		region = region or detect_region()
 		self.bands = REGIONS[region]
 		self.acars_band = ACARS_BANDS[region]
 		self.device_index = device_index
+		self.gain = gain
 		self.open_sdr()
 		self.sdr_lock = threading.RLock()
 		self.band = None
@@ -1080,7 +1083,7 @@ class Receiver:
 	def open_sdr(self):
 		self.sdr = RtlSdr(device_index=self.device_index)
 		self.sdr.sample_rate = SDR_RATE
-		self.sdr.gain = SDR_GAIN
+		self.sdr.gain = self.gain
 
 	def notify_status(self):
 		if self.on_status_change:
@@ -1120,7 +1123,11 @@ class Receiver:
 					radio.open(self.device_index)
 					opened = True
 					self.hd = radio
-					radio.set_auto_gain(True)
+					if self.gain == AUTO_GAIN:
+						radio.set_auto_gain(True)
+					else:
+						radio.set_auto_gain(False)
+						radio.set_gain(self.gain)
 					radio.set_frequency(self.freq_mhz * 1e6)
 					radio.start()
 			except nrsc5.NRSC5Error:
@@ -1250,7 +1257,7 @@ class Receiver:
 							self.sdr.center_freq = center_freq
 						self.sdr.set_direct_sampling("q" if band.direct_sampling else 0)
 						# Changing mode resets the tuner, including its gain.
-						self.sdr.gain = SDR_GAIN
+						self.sdr.gain = self.gain
 					self.sdr.center_freq = center_freq
 			except LibUSBError as error:
 				self.lose_dongle(error)
@@ -1763,6 +1770,27 @@ def web_port(text):
 	return port
 
 
+def gain_setting(text):
+	"""Reads a gain for argparse and airwaves.conf: auto, or a number of dB."""
+	if text.strip().lower() == AUTO_GAIN:
+		return AUTO_GAIN
+	try:
+		gain = float(text)
+	except ValueError:
+		raise argparse.ArgumentTypeError(f"{text} is not a gain in dB") from None
+	if not 0 <= gain <= MAX_GAIN_DB:
+		raise argparse.ArgumentTypeError(f"gain must be {AUTO_GAIN} or from 0 to {MAX_GAIN_DB} dB")
+	return gain
+
+
+def saved_gain(settings):
+	"""Returns the gain in airwaves.conf, or auto when it is missing or invalid."""
+	try:
+		return gain_setting(settings.get("gain", AUTO_GAIN))
+	except argparse.ArgumentTypeError:
+		return AUTO_GAIN
+
+
 def main():
 	parser = argparse.ArgumentParser(description="Listen to AM, FM, or NOAA weather radio with an RTL-SDR dongle.")
 	parser.add_argument("-v", "--version", action="version", version=VERSION_TEXT)
@@ -1778,6 +1806,7 @@ def main():
 	cast.add_argument("--sonos", nargs="?", const="", metavar="SPEAKER", help="Cast to the Sonos group with this speaker in it. Without a name, choose from a list.")
 	cast.add_argument("--airplay", nargs="?", const="", metavar="DEVICE", help="Cast to this AirPlay device. Without a name, choose from a list.")
 	parser.add_argument("--device", type=int, metavar="N", help="Use the Nth dongle, counting from 1. Without it, choose from a list when there is more than one.")
+	parser.add_argument("--gain", type=gain_setting, metavar="DB", help=f"Tuner gain: {AUTO_GAIN}, or from 0 to {MAX_GAIN_DB} dB. Default is the gain in {config.FILE_NAME}, or {AUTO_GAIN}.")
 	parser.add_argument("--web", nargs="?", type=web_port, const=DEFAULT_WEB_PORT, metavar="PORT", help=f"Control the radio from a browser instead of the keyboard. Default port is {DEFAULT_WEB_PORT}. Needs the web extra.")
 	parser.add_argument("--web-password", metavar="PASSWORD", help="Ask browsers for this password. Needs --web.")
 	args = parser.parse_args()
@@ -1830,7 +1859,8 @@ def main():
 		print(f"error: Could not open the log file: {error}")
 		return 1
 	try:
-		receiver = Receiver(device.index, args.frequency, region)
+		gain = saved_gain(config.load()) if args.gain is None else args.gain
+		receiver = Receiver(device.index, args.frequency, region, gain)
 	except LibUSBError as error:
 		print(f"error: {dongle_error_text(error)}")
 		return 1
