@@ -78,6 +78,8 @@ BLOCK_SIZE = 153600
 AUTO_GAIN = "auto"
 # The R820T tuner's highest gain is 49.6 dB. The driver picks the closest gain the tuner has.
 MAX_GAIN_DB = 50
+# Cheap dongles are off by up to about 100 parts per million.
+MAX_PPM = 200
 
 CHANNEL_CUTOFF = 120000
 CHANNEL_TAPS = 151
@@ -1019,12 +1021,13 @@ class Receiver:
 
 	Call start() to begin playing and stop() when done. on_status_change, if set, is called with no arguments from a background thread when stereo, signal_db, rds_name, rds_text, or the HD state changes."""
 
-	def __init__(self, device_index, freq_mhz, region=None, gain=AUTO_GAIN):
+	def __init__(self, device_index, freq_mhz, region=None, gain=AUTO_GAIN, ppm=0):
 		region = region or detect_region()
 		self.bands = REGIONS[region]
 		self.acars_band = ACARS_BANDS[region]
 		self.device_index = device_index
 		self.gain = gain
+		self.ppm = ppm
 		self.open_sdr()
 		self.sdr_lock = threading.RLock()
 		self.band = None
@@ -1084,6 +1087,9 @@ class Receiver:
 		self.sdr = RtlSdr(device_index=self.device_index)
 		self.sdr.sample_rate = SDR_RATE
 		self.sdr.gain = self.gain
+		# The driver refuses a correction equal to the one it has, which starts at 0.
+		if self.ppm:
+			self.sdr.freq_correction = self.ppm
 
 	def notify_status(self):
 		if self.on_status_change:
@@ -1128,6 +1134,8 @@ class Receiver:
 					else:
 						radio.set_auto_gain(False)
 						radio.set_gain(self.gain)
+					if self.ppm:
+						radio.set_freq_correction(self.ppm)
 					radio.set_frequency(self.freq_mhz * 1e6)
 					radio.start()
 			except nrsc5.NRSC5Error:
@@ -1791,6 +1799,17 @@ def saved_gain(settings):
 		return AUTO_GAIN
 
 
+def ppm_setting(text):
+	"""Reads the --ppm frequency correction for argparse."""
+	try:
+		ppm = int(text)
+	except ValueError:
+		raise argparse.ArgumentTypeError(f"{text} is not a whole number") from None
+	if not -MAX_PPM <= ppm <= MAX_PPM:
+		raise argparse.ArgumentTypeError(f"ppm must be from {-MAX_PPM} to {MAX_PPM}")
+	return ppm
+
+
 def main():
 	parser = argparse.ArgumentParser(description="Listen to AM, FM, or NOAA weather radio with an RTL-SDR dongle.")
 	parser.add_argument("-v", "--version", action="version", version=VERSION_TEXT)
@@ -1807,6 +1826,7 @@ def main():
 	cast.add_argument("--airplay", nargs="?", const="", metavar="DEVICE", help="Cast to this AirPlay device. Without a name, choose from a list.")
 	parser.add_argument("--device", type=int, metavar="N", help="Use the Nth dongle, counting from 1. Without it, choose from a list when there is more than one.")
 	parser.add_argument("--gain", type=gain_setting, metavar="DB", help=f"Tuner gain: {AUTO_GAIN}, or from 0 to {MAX_GAIN_DB} dB. Default is the gain in {config.FILE_NAME}, or {AUTO_GAIN}.")
+	parser.add_argument("--ppm", type=ppm_setting, metavar="PPM", help=f"Correct the dongle's frequency error, in parts per million, from {-MAX_PPM} to {MAX_PPM}. Default is the ppm in {config.FILE_NAME}, or 0.")
 	parser.add_argument("--web", nargs="?", type=web_port, const=DEFAULT_WEB_PORT, metavar="PORT", help=f"Control the radio from a browser instead of the keyboard. Default port is {DEFAULT_WEB_PORT}. Needs the web extra.")
 	parser.add_argument("--web-password", metavar="PASSWORD", help="Ask browsers for this password. Needs --web.")
 	args = parser.parse_args()
@@ -1859,8 +1879,10 @@ def main():
 		print(f"error: Could not open the log file: {error}")
 		return 1
 	try:
-		gain = saved_gain(config.load()) if args.gain is None else args.gain
-		receiver = Receiver(device.index, args.frequency, region, gain)
+		settings = config.load()
+		gain = saved_gain(settings) if args.gain is None else args.gain
+		ppm = config.get_int(settings, "ppm", 0, -MAX_PPM, MAX_PPM) if args.ppm is None else args.ppm
+		receiver = Receiver(device.index, args.frequency, region, gain, ppm)
 	except LibUSBError as error:
 		print(f"error: {dongle_error_text(error)}")
 		return 1

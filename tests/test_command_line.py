@@ -43,18 +43,26 @@ def test_bad_web_options_are_refused(monkeypatch, args):
 	assert stop.value.code == 2
 
 
-def started_gain(monkeypatch, *args):
-	"""Runs sdr with args and returns the gain it opens the dongle with."""
+def opened_with(monkeypatch, *args):
+	"""Runs sdr with args and returns the gain and ppm it opens the dongle with."""
 	opened = {}
 
-	def receiver(device_index, freq_mhz, region, gain):
-		opened["gain"] = gain
+	def receiver(device_index, freq_mhz, region, gain, ppm):
+		opened.update(gain=gain, ppm=ppm)
 		raise sdr.LibUSBError(-3)
 
 	monkeypatch.setattr(sdr, "list_devices", lambda: [sdr.Device(0, "Generic RTL2832U", "00000001")])
 	monkeypatch.setattr(sdr, "Receiver", receiver)
 	assert run(monkeypatch, *args) == 1
-	return opened["gain"]
+	return opened
+
+
+def started_gain(monkeypatch, *args):
+	return opened_with(monkeypatch, *args)["gain"]
+
+
+def started_ppm(monkeypatch, *args):
+	return opened_with(monkeypatch, *args)["ppm"]
 
 
 def test_gain_is_auto_by_default(monkeypatch):
@@ -81,4 +89,30 @@ def test_invalid_gain_in_the_config_file_is_auto(monkeypatch, tmp_path):
 def test_bad_gain_is_refused(monkeypatch, gain):
 	with pytest.raises(SystemExit) as stop:
 		run(monkeypatch, "--gain", gain)
+	assert stop.value.code == 2
+
+
+def test_ppm_is_0_by_default(monkeypatch):
+	assert started_ppm(monkeypatch) == 0
+
+
+def test_ppm_comes_from_the_config_file(monkeypatch, tmp_path):
+	(tmp_path / "airwaves.conf").write_text("[airwaves]\nppm = -42\n")
+	assert started_ppm(monkeypatch) == -42
+
+
+def test_ppm_option_overrides_the_config_file(monkeypatch, tmp_path):
+	(tmp_path / "airwaves.conf").write_text("[airwaves]\nppm = -42\n")
+	assert started_ppm(monkeypatch, "--ppm", "0") == 0
+
+
+def test_invalid_ppm_in_the_config_file_is_0(monkeypatch, tmp_path):
+	(tmp_path / "airwaves.conf").write_text("[airwaves]\nppm = 1000\n")
+	assert started_ppm(monkeypatch) == 0
+
+
+@pytest.mark.parametrize("ppm", ["fast", "1.5", "201", "-201"])
+def test_bad_ppm_is_refused(monkeypatch, ppm):
+	with pytest.raises(SystemExit) as stop:
+		run(monkeypatch, "--ppm", ppm)
 	assert stop.value.code == 2

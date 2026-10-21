@@ -193,6 +193,12 @@ The dongle sets its own gain by default. If strong stations nearby cause noise, 
 uv run sdr 97.9 --gain 30
 ```
 
+Most dongles tune a little above or below the frequency you ask for. The error is measured in parts per million (ppm), and on cheap dongles it can be 50 ppm or more, which puts NOAA weather radio about 8 kHz off. Dongles with a TCXO (temperature compensated crystal), such as the RTL-SDR Blog V3 and V4, are usually within 2 ppm and do not need this. To correct the error, give it with `--ppm`, from -200 to 200, or add it to `airwaves.conf`, for example `ppm = 42`. A tool such as `rtl_test -p` or kalibrate-rtl can measure it:
+
+```
+uv run sdr 162.55 --ppm 42
+```
+
 On weather radio, each alert prints on its own line, for example `ALERT: Tornado Warning until 3:45 PM for 004013`, and stays on the status line until it expires. The numbers are county FIPS codes. To only get alerts for your county, add `--county` with its FIPS code. Alerts for the whole US always show. To keep the sound off until an alert arrives, like a weather radio, add `--alert-mode`:
 
 ```
@@ -389,7 +395,7 @@ receiver.stop()
 | Member | Purpose |
 | --- | --- |
 | `list_devices()` | Returns the connected dongles, each with `index`, `name`, and `serial`. |
-| `Receiver(device_index, freq_mhz, region=None, gain="auto")` | Opens a dongle. `region` is `"us"` or `"eu"`. Without it, the receiver uses `detect_region()`, which reads the system's country setting. `gain` is `"auto"` or the tuner gain in dB. |
+| `Receiver(device_index, freq_mhz, region=None, gain="auto", ppm=0)` | Opens a dongle. `region` is `"us"` or `"eu"`. Without it, the receiver uses `detect_region()`, which reads the system's country setting. `gain` is `"auto"` or the tuner gain in dB. `ppm` corrects the dongle's frequency error. |
 | `start()`, `stop()` | Start and stop the dongle and audio. |
 | `tune(freq_mhz)`, `freq_mhz` | Change and read the frequency. AM, shortwave, FM, aviation, and NOAA frequencies all work. Other frequencies raise `ValueError`. |
 | `band` | The current band, `sdr.AM`, `sdr.SW`, `sdr.FM`, `sdr.AIR`, or `sdr.NOAA`. While ACARS decodes, it is `sdr.ACARS` or `sdr.ACARS_EU`. |
