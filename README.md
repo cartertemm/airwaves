@@ -310,7 +310,7 @@ While casting, the computer is silent, and Space, `_`, `+`, and `m` pause, chang
 * The skip buttons on the speakers and in the Sonos app scan to the previous or next station.
 * The Sonos app shows the frequency and station name, and the song from RDS.
 * If someone plays something else on the speakers, the script plays on the computer again.
-* If the speakers stop answering for 30 seconds, for example because they were unplugged, the script also plays on the computer again.
+* If the speakers are unplugged or drop off the network, the script plays on the computer again after about 30 seconds.
 
 Casting replaces the Sonos queue for the group. When you stop casting or quit, the speakers stop.
 
@@ -351,7 +351,7 @@ The page works like a radio's front panel. Every command is a button, and also a
 | Shift+1 to Shift+0 | Save the station to that preset, replacing what is there |
 | B, Shift+B | Next band, previous band |
 | D, Shift+D | Next and previous HD program. The first press checks for HD. |
-| P | Presets. Delete clears the highlighted preset. Each preset also has a Clear button beside it. |
+| P | Presets. Delete clears the highlighted preset. You can also use the Clear button next to each preset. |
 | O | Choose where the sound plays |
 | I | Say what is playing |
 | S | Settings |
@@ -363,13 +363,13 @@ On a phone, open the page and add it to the home screen (in Safari, tap Share, t
 
 Press O, or the Play on button, to choose where the sound plays:
 
-* **Server speakers**: the sound card of the computer running `sdr`. Not listed when it has none. Play, Mute, and the Up and Down keys then change the sound on that computer. The radio starts paused, so nothing plays there until you press Play.
-* **This browser**: press Play to listen. Play, Mute, and the Up and Down keys then only change this browser. Several browsers can listen at once. On iPhone, iOS does not let a page set the volume, so use the volume buttons on the phone.
+* **Server speakers**: the sound card of the computer running `sdr`. If "server speakers" is not listed, no soundcard was detected. Play, Mute, and the Up and Down keys then change the sound on that computer. Note that the radio starts paused by default.
+* **This browser**: press Play to listen. Play, Mute, and the Up and Down keys then only change this browser. Several browsers can listen at once. On iPhone, iOS does not let a page set the volume. As such the volume slider is hidden unless you are listening on the server speakers or casting to another device on the network.
 * **A Sonos or AirPlay speaker**: press Find Sonos and AirPlay speakers first. Needs the `sonos` or `airplay` extra. The panel shows a volume slider for the speaker.
 
 The page has no control for ACARS or recording yet. It always shows the signal.
 
-Anyone on your network can open the page. To ask for a password, add `--web-password PASSWORD`. Browsers send it without encryption, so use it on a home network only. Any user name works.
+Anyone on your network can open the page. To ask for a password, add `--web-password PASSWORD`. Note that browsers currently send it without encryption. Any username should work.
 
 With more than one dongle, choose one with `--device N`, counting from 1. `--sonos` and `--airplay` need a speaker name with `--web`. Messages that the page shows also print in the console.
 
