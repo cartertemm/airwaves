@@ -350,7 +350,7 @@ The page works like a radio's front panel. Every command is a button, and also a
 | Shift+1 to Shift+0 | Save the station to that preset, replacing what is there |
 | B, Shift+B | Next band, previous band |
 | D, Shift+D | Next and previous HD program. The first press checks for HD. |
-| P | Presets. Delete clears the highlighted preset. |
+| P | Presets. Delete clears the highlighted preset. Each preset also has a Clear button beside it. |
 | O | Choose where the sound plays |
 | I | Say what is playing |
 | S | Settings |

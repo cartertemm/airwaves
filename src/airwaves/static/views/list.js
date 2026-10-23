@@ -31,6 +31,11 @@ export function keyboardList({ label, items, onChoose, onRemove = null, emptyTex
 		if (focus) buttons[index].focus()
 	}
 
+	// Out of the tab order: keyboard users press Delete instead.
+	function removeButton(item) {
+		return el('button', { type: 'button', class: 'list-remove', text: 'Clear', 'aria-label': `Clear ${item.label}`, tabindex: '-1', onClick: () => onRemove(item.id) })
+	}
+
 	function onKeyDown(event) {
 		if (buttons.length === 0 || event.ctrlKey || event.altKey || event.metaKey) return
 		const moves = { ArrowDown: index + 1, ArrowUp: index - 1, PageDown: index + PAGE, PageUp: index - PAGE, Home: 0, End: buttons.length - 1 }
@@ -43,7 +48,7 @@ export function keyboardList({ label, items, onChoose, onRemove = null, emptyTex
 	const node = el(
 		'div',
 		{ role: 'application', 'aria-label': label, class: 'list', onKeydown: onKeyDown },
-		buttons.length > 0 ? el('ul', {}, ...buttons.map(button => el('li', {}, button))) : el('p', { class: 'empty', text: emptyText }),
+		buttons.length > 0 ? el('ul', {}, ...buttons.map((button, position) => el('li', {}, button, ...(onRemove ? [removeButton(items[position])] : [])))) : el('p', { class: 'empty', text: emptyText }),
 	)
 	return { node, isEmpty: buttons.length === 0, focus: () => buttons[index]?.focus(), selectedId: () => items[index]?.id ?? null, selectedIndex: () => index }
 }
