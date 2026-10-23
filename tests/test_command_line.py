@@ -57,6 +57,49 @@ def opened_with(monkeypatch, *args):
 	return opened
 
 
+def opened_frequency(monkeypatch, *args):
+	opened = {}
+
+	def receiver(device_index, freq_mhz, region, gain, ppm):
+		opened["freq"] = freq_mhz
+		raise sdr.LibUSBError(-3)
+
+	monkeypatch.setattr(sdr, "list_devices", lambda: [sdr.Device(0, "Generic RTL2832U", "00000001")])
+	monkeypatch.setattr(sdr, "Receiver", receiver)
+	assert run(monkeypatch, *args) == 1
+	return opened["freq"]
+
+
+@pytest.mark.parametrize("option", ["--web", "--sonos", "--airplay"])
+def test_frequency_after_an_option_is_the_frequency(monkeypatch, option):
+	if option == "--web":
+		pytest.importorskip("aiohttp")
+	assert opened_frequency(monkeypatch, option, "97.9") == 97.9
+
+
+def parsed(*args):
+	return sdr.parse_args(sdr.make_parser(), list(args))
+
+
+@pytest.mark.parametrize(("args", "frequency", "web", "sonos", "airplay"), [
+	(("--web", "97.9"), 97.9, sdr.DEFAULT_WEB_PORT, None, None),
+	(("--web", "8080"), sdr.FM.min_mhz, 8080, None, None),
+	(("--sonos", "97.9"), 97.9, None, "", None),
+	(("--airplay", "162.55"), 162.55, None, None, ""),
+	(("--sonos", "Mr. Kitchen"), sdr.FM.min_mhz, None, "Mr. Kitchen", None),
+	(("97.9", "--sonos", "Kitchen"), 97.9, None, "Kitchen", None),
+])
+def test_options_and_frequency_in_any_order(args, frequency, web, sonos, airplay):
+	result = parsed(*args)
+	assert (result.frequency, result.web, result.sonos, result.airplay) == (frequency, web, sonos, airplay)
+
+
+def test_frequency_given_twice_is_refused():
+	with pytest.raises(SystemExit) as stop:
+		parsed("98.1", "--web", "97.9")
+	assert stop.value.code == 2
+
+
 def started_gain(monkeypatch, *args):
 	return opened_with(monkeypatch, *args)["gain"]
 

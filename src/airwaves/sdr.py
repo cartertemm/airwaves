@@ -1810,10 +1810,10 @@ def ppm_setting(text):
 	return ppm
 
 
-def main():
+def make_parser():
 	parser = argparse.ArgumentParser(description="Listen to AM, FM, or NOAA weather radio with an RTL-SDR dongle.")
 	parser.add_argument("-v", "--version", action="version", version=VERSION_TEXT)
-	parser.add_argument("frequency", type=float, nargs="?", default=FM.min_mhz, help=f"Frequency in MHz. Default is {FM.min_mhz}.")
+	parser.add_argument("frequency", type=float, nargs="?", help=f"Frequency in MHz. Default is {FM.min_mhz}.")
 	parser.add_argument("--region", choices=REGIONS, help="Band plan to use. Default is from the system's country setting.")
 	parser.add_argument("--county", help="Only report weather alerts for this 5 or 6 digit county FIPS code.")
 	parser.add_argument("--alert-mode", action="store_true", help="Keep the sound off until a weather alert arrives. Needs a NOAA frequency.")
@@ -1827,9 +1827,37 @@ def main():
 	parser.add_argument("--device", type=int, metavar="N", help="Use the Nth dongle, counting from 1. Without it, choose from a list when there is more than one.")
 	parser.add_argument("--gain", type=gain_setting, metavar="DB", help=f"Tuner gain: {AUTO_GAIN}, or from 0 to {MAX_GAIN_DB} dB. Default is the gain in {config.FILE_NAME}, or {AUTO_GAIN}.")
 	parser.add_argument("--ppm", type=ppm_setting, metavar="PPM", help=f"Correct the dongle's frequency error, in parts per million, from {-MAX_PPM} to {MAX_PPM}. Default is the ppm in {config.FILE_NAME}, or 0.")
-	parser.add_argument("--web", nargs="?", type=web_port, const=DEFAULT_WEB_PORT, metavar="PORT", help=f"Control the radio from a browser instead of the keyboard. Default port is {DEFAULT_WEB_PORT}. Needs the web extra.")
+	parser.add_argument("--web", nargs="?", const=str(DEFAULT_WEB_PORT), metavar="PORT", help=f"Control the radio from a browser instead of the keyboard. Default port is {DEFAULT_WEB_PORT}. Needs the web extra.")
 	parser.add_argument("--web-password", metavar="PASSWORD", help="Ask browsers for this password. Needs --web.")
-	args = parser.parse_args()
+	return parser
+
+
+def parse_args(parser, argv=None):
+	"""Parses the command line. A frequency typed after --web, --sonos, or --airplay is the frequency, not the option's value."""
+	args = parser.parse_args(argv)
+	if args.frequency is None:
+		for option, no_value in (("web", str(DEFAULT_WEB_PORT)), ("sonos", ""), ("airplay", "")):
+			value = getattr(args, option)
+			if value and "." in value:
+				try:
+					args.frequency = float(value)
+				except ValueError:
+					continue
+				setattr(args, option, no_value)
+				break
+		else:
+			args.frequency = FM.min_mhz
+	if args.web is not None:
+		try:
+			args.web = web_port(args.web)
+		except argparse.ArgumentTypeError as error:
+			parser.error(f"argument --web: {error}")
+	return args
+
+
+def main():
+	parser = make_parser()
+	args = parse_args(parser)
 	print(VERSION_TEXT)
 	# Library log messages would print over the status line. Without a handler, the first one also turns on console logging for all of them.
 	logging.getLogger().addHandler(logging.NullHandler())
