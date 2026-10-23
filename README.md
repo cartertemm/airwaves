@@ -310,6 +310,7 @@ While casting, the computer is silent, and Space, `_`, `+`, and `m` pause, chang
 * The skip buttons on the speakers and in the Sonos app scan to the previous or next station.
 * The Sonos app shows the frequency and station name, and the song from RDS.
 * If someone plays something else on the speakers, the script plays on the computer again.
+* If the speakers stop answering for 30 seconds, for example because they were unplugged, the script also plays on the computer again.
 
 Casting replaces the Sonos queue for the group. When you stop casting or quit, the speakers stop.
 

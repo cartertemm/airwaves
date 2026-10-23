@@ -17,6 +17,8 @@ CLIENT_WAIT_SECONDS = 1
 MP3_FRAME_SAMPLES = 1152
 DISCOVER_SECONDS = 5
 POLL_SECONDS = 0.5
+# How long Sonos may not answer before the speaker counts as gone.
+LOST_SECONDS = 30
 SONOS_PORT = 1400
 # Sonos disables skip for a single radio stream. A repeating queue of three copies of it
 # enables the skip buttons, and the change in queue position tells which button was pressed.
@@ -208,6 +210,7 @@ class Caster:
 		self.position = None
 		self.status = (False, False)
 		self.volume_percent = 0
+		self.failing_since = None
 
 	def start(self):
 		self.volume_percent = self.coordinator.group.volume
@@ -246,7 +249,7 @@ class Caster:
 		"""Called when Sonos is paused, resumed, muted, unmuted, or its volume changes."""
 
 	def on_lost(self):
-		"""Called when the group switches to another source. Polling has stopped; call stop(release=False) to leave Sonos alone."""
+		"""Called when the group switches to another source, or has not answered for LOST_SECONDS. Polling has stopped; call stop(release=False) to leave Sonos alone."""
 
 	def poll(self):
 		while self.running:
@@ -260,14 +263,23 @@ class Caster:
 
 	def check(self):
 		"""Asks Sonos for its state once: scans on a skip, and reports pauses, mutes, and another source taking over."""
+		from soco.exceptions import SoCoException
+
 		try:
 			track = self.coordinator.get_current_track_info()
 			state = self.coordinator.get_current_transport_info()["current_transport_state"]
 			muted = self.coordinator.group.mute
 			volume = self.coordinator.group.volume
-		except Exception:
-			# Sonos did not answer this time. Ask again on the next poll.
+		except (OSError, SoCoException):
+			# Sonos did not answer this time. Ask again on the next poll, unless it has stopped answering.
+			now = time.monotonic()
+			if self.failing_since is None:
+				self.failing_since = now
+			elif now - self.failing_since >= LOST_SECONDS and self.running:
+				self.running = False
+				self.on_lost()
 			return
+		self.failing_since = None
 		if not self.running:
 			# stop() changes the queue position, which is not a skip.
 			return
