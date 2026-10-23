@@ -391,6 +391,7 @@ def run(radio, port, password=None, sonos=None, airplay=None):
 	server = WebServer(radio, password)
 
 	def startup():
+		receiver.paused = True
 		if not receiver.has_sound_card:
 			radio.set_output(BROWSERS)
 		receiver.start()

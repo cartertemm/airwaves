@@ -546,6 +546,8 @@ class Radio:
 				self.message(f"error: Could not cast to {target.label}: {str(error).rstrip('.')}. {self.fall_back(from_browsers)}")
 				return False
 			self.caster = caster
+			# A paused receiver gives the caster silence. The caster pauses on its own.
+			self.receiver.paused = False
 			if self.waiting_for_alert:
 				caster.paused = True
 			self.message(f"Casting to {target.label}")

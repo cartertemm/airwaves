@@ -235,6 +235,18 @@ def test_run_starts_after_binding_and_stops_when_the_receiver_stops(receiver):
 	assert radio.browser_stream is None
 
 
+def test_run_starts_paused_on_the_sound_card(receiver):
+	paused = []
+	receiver.start = lambda: paused.append(receiver.paused)
+	receiver.stop = lambda: None
+	with socket.socket() as probe:
+		probe.bind((web.HOST, 0))
+		port = probe.getsockname()[1]
+	threading.Timer(0.3, lambda: setattr(receiver, "running", False)).start()
+	assert web.run(Radio(receiver), port) is True
+	assert paused == [True]
+
+
 def test_presets_are_read_again_only_after_preset_commands(receiver):
 	async def presets(client):
 		state = await (await client.get("/api/state")).json()

@@ -197,6 +197,13 @@ def test_casting_stops_the_browser_stream(receiver):
 	assert receiver.local_audio
 
 
+def test_casting_plays_when_paused_here(receiver):
+	radio = Radio(receiver)
+	receiver.paused = True
+	radio.set_output(kitchen(receiver))
+	assert not receiver.paused
+
+
 def test_lost_cast_plays_in_browsers_without_a_sound_card(receiver):
 	receiver.has_sound_card = False
 	radio = Radio(receiver)

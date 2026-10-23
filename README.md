@@ -363,7 +363,7 @@ On a phone, open the page and add it to the home screen (in Safari, tap Share, t
 
 Press O, or the Play on button, to choose where the sound plays:
 
-* **Server speakers**: the sound card of the computer running `sdr`. Not listed when it has none. Play, Mute, and the Up and Down keys then change the sound on that computer.
+* **Server speakers**: the sound card of the computer running `sdr`. Not listed when it has none. Play, Mute, and the Up and Down keys then change the sound on that computer. The radio starts paused, so nothing plays there until you press Play.
 * **This browser**: press Play to listen. Play, Mute, and the Up and Down keys then only change this browser. Several browsers can listen at once. On iPhone, iOS does not let a page set the volume, so use the volume buttons on the phone.
 * **A Sonos or AirPlay speaker**: press Find Sonos and AirPlay speakers first. Needs the `sonos` or `airplay` extra. The panel shows a volume slider for the speaker.
 
