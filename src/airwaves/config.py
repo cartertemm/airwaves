@@ -8,7 +8,7 @@ PRESETS = "presets"
 
 
 def read():
-	parser = configparser.ConfigParser()
+	parser = configparser.ConfigParser(interpolation=None)
 	try:
 		parser.read(FILE_NAME, encoding="utf-8")
 	except configparser.Error:
