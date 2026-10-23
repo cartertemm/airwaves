@@ -7,7 +7,7 @@ import { el, mount } from 'audiogame-utils'
 
 const PAGE = 10
 
-export function keyboardList({ label, items, onChoose, onRemove = null, emptyText, startId = null, startIndex = null }) {
+export function keyboardList({ label, items, onChoose, onRemove = null, onHighlight = null, emptyText, startId = null, startIndex = null }) {
 	const start = items.findIndex(item => item.id === startId)
 	const fallback = startIndex === null ? Math.max(0, items.findIndex(item => item.current)) : Math.max(0, Math.min(items.length - 1, startIndex))
 	let index = start >= 0 ? start : fallback
@@ -28,6 +28,7 @@ export function keyboardList({ label, items, onChoose, onRemove = null, emptyTex
 		buttons[index].setAttribute('tabindex', '-1')
 		index = Math.max(0, Math.min(buttons.length - 1, next))
 		buttons[index].setAttribute('tabindex', '0')
+		onHighlight?.()
 		if (focus) buttons[index].focus()
 	}
 
@@ -60,6 +61,7 @@ export function listScreen(root, { radio, describe, onDone }) {
 	const close = el('button', { type: 'button', text: 'Close', onClick: onDone })
 	let shown = null
 	let list = null
+	let actions = []
 
 	function draw() {
 		const view = describe(radio)
@@ -81,13 +83,26 @@ export function listScreen(root, { radio, describe, onDone }) {
 				view.onChoose(id)
 			},
 			onRemove: view.onRemove,
+			onHighlight: relabel,
 		})
-		const focusedAction = actionsHolder.contains(document.activeElement) ? document.activeElement.textContent : null
+		const focusedAction = [...actionsHolder.children].indexOf(document.activeElement)
 		holder.replaceChildren(list.node)
-		actionsHolder.replaceChildren(...(view.actions ?? []).map(action => el('button', { type: 'button', class: 'action', text: action.text, onClick: () => action.onClick(list.selectedId()) })))
-		const sameAction = focusedAction === null ? null : [...actionsHolder.children].find(button => button.textContent === focusedAction)
+		actions = view.actions ?? []
+		actionsHolder.replaceChildren(...actions.map(action => el('button', { type: 'button', class: 'action', text: actionText(action), onClick: () => action.onClick(list.selectedId()) })))
+		const sameAction = actionsHolder.children[focusedAction]
 		if (sameAction) sameAction.focus()
-		else if (focusList || focusedAction !== null) (list.isEmpty ? close : list).focus()
+		else if (focusList || focusedAction >= 0) (list.isEmpty ? close : list).focus()
+	}
+
+	function actionText(action) {
+		return typeof action.text === 'function' ? action.text(list.selectedId()) : action.text
+	}
+
+	function relabel() {
+		actions.forEach((action, position) => {
+			const button = actionsHolder.children[position]
+			if (button) button.textContent = actionText(action)
+		})
 	}
 
 	mount(root, [
