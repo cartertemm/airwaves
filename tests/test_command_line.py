@@ -6,7 +6,7 @@ from airwaves import sdr
 
 
 def run(monkeypatch, *args):
-	monkeypatch.setattr(sys, "argv", ["sdr", *args])
+	monkeypatch.setattr(sys, "argv", ["airwaves", *args])
 	return sdr.main()
 
 

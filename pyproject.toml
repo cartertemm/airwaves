@@ -28,7 +28,7 @@ web = [
 ]
 
 [project.scripts]
-sdr = "airwaves.sdr:main"
+airwaves = "airwaves.sdr:main"
 broadcastify = "airwaves.broadcastify:main"
 iheart = "airwaves.iheart:main"
 radio-locator = "airwaves.radiolocator:main"

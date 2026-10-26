@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Build sdr.exe
+      - name: Build airwaves.exe
         shell: cmd
         run: build.bat
 
@@ -29,7 +29,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes
-          gh release upload "$TAG" dist/sdr.exe --clobber
+          gh release upload "$TAG" dist/airwaves.exe --clobber
 
   build-macos:
     # The Windows job creates the release. Two jobs creating it at once would race.
@@ -42,7 +42,7 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Build sdr
+      - name: Build airwaves
         run: ./build.sh
 
       - name: Upload to release
@@ -51,8 +51,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           # A bare file downloaded from a release loses its executable bit.
-          tar -czf sdr-macos-arm64.tar.gz -C dist sdr
-          gh release upload "$TAG" sdr-macos-arm64.tar.gz --clobber
+          tar -czf airwaves-macos-arm64.tar.gz -C dist airwaves
+          gh release upload "$TAG" airwaves-macos-arm64.tar.gz --clobber
 
   build-linux:
     needs: build-windows
@@ -69,7 +69,7 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Build sdr
+      - name: Build airwaves
         shell: bash
         run: ./build.sh
 
@@ -80,5 +80,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          tar -czf sdr-linux-x86_64.tar.gz -C dist sdr
-          gh release upload "$TAG" sdr-linux-x86_64.tar.gz --clobber
+          tar -czf airwaves-linux-x86_64.tar.gz -C dist airwaves
+          gh release upload "$TAG" airwaves-linux-x86_64.tar.gz --clobber

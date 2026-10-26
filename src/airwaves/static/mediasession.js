@@ -20,7 +20,7 @@ export function bindMediaSession(radio, { mediaSession = globalThis.navigator?.m
 		const next = JSON.stringify([status.frequency, status.station, status.text])
 		if (next === last) return
 		last = next
-		mediaSession.metadata = new MediaMetadataClass({ title: status.text || status.station || status.frequency, artist: [status.frequency, status.station].filter(Boolean).join(' '), album: 'SDR Tuner' })
+		mediaSession.metadata = new MediaMetadataClass({ title: status.text || status.station || status.frequency, artist: [status.frequency, status.station].filter(Boolean).join(' '), album: 'Airwaves' })
 	}
 	return radio.onChange(update)
 }

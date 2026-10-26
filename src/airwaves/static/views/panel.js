@@ -54,7 +54,7 @@ export function panelScreen(root, { radio, commands }) {
 		const status = radio.status
 		setText(connection, radio.connection === 'open' ? '' : radio.connection === 'closed' ? 'Disconnected' : 'Connecting')
 		if (!status) {
-			setText(frequency, 'SDR Tuner')
+			setText(frequency, 'Airwaves')
 			return
 		}
 		setText(frequency, status.scanning ? 'Seeking' : status.frequency)
@@ -68,7 +68,7 @@ export function panelScreen(root, { radio, commands }) {
 		alertBadge.hidden = !status.alert
 		setText(alertBadge, status.alert ? `Alert: ${status.alert}` : '')
 		setText(output, `Playing on ${outputName(status.output)}`)
-		document.title = `${[status.frequency, status.station].filter(Boolean).join(' ')} | SDR Tuner`
+		document.title = `${[status.frequency, status.station].filter(Boolean).join(' ')} | Airwaves`
 
 		const playing = radio.isPlaying()
 		play.setAttribute('aria-label', playing ? 'Pause' : 'Play')
@@ -84,7 +84,7 @@ export function panelScreen(root, { radio, commands }) {
 
 	const panel = el(
 		'main',
-		{ role: 'application', 'aria-label': 'SDR Tuner front panel', tabindex: '0', autoFocus: true, class: 'panel' },
+		{ role: 'application', 'aria-label': 'Airwaves front panel', tabindex: '0', autoFocus: true, class: 'panel' },
 		el('section', { 'aria-label': 'Display', class: 'display' }, el('div', { class: 'badges' }, hdBadge, alertBadge), frequency, station, text, signal, output, connection),
 		el(
 			'section',

@@ -205,7 +205,7 @@ class WebServer:
 	@aioweb.middleware
 	async def check_password(self, request, handler):
 		if self.password is not None and not self.authorized(request.headers.get("Authorization", "")):
-			return aioweb.Response(status=401, text="This radio needs a password.", headers={"WWW-Authenticate": 'Basic realm="sdr", charset="UTF-8"'})
+			return aioweb.Response(status=401, text="This radio needs a password.", headers={"WWW-Authenticate": 'Basic realm="airwaves", charset="UTF-8"'})
 		return await handler(request)
 
 	def authorized(self, header):

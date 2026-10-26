@@ -1,4 +1,4 @@
-# PyInstaller spec for dist\sdr.exe and dist/sdr. Run it through build.bat or build.sh.
+# PyInstaller spec for dist\airwaves.exe and dist/airwaves. Run it through build.bat or build.sh.
 import os
 import sys
 
@@ -28,7 +28,7 @@ hiddenimports = collect_submodules("pyatv") + collect_submodules("soco") + colle
 hiddenimports += ["airwaves.sonos_cast", "airwaves.airplay_cast", "airwaves.radio", "airwaves.web"]
 
 a = Analysis(
-	[os.path.join(SPECPATH, "build", "sdr_main.py")],
+	[os.path.join(SPECPATH, "build", "airwaves_main.py")],
 	pathex=[os.path.join(SPECPATH, "src")],
 	binaries=binaries,
 	datas=datas,
@@ -48,6 +48,6 @@ exe = EXE(
 	a.scripts,
 	a.binaries,
 	a.datas,
-	name="sdr",
+	name="airwaves",
 	console=True,
 )

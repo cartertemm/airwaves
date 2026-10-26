@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds dist/sdr on macOS or Linux: one file that runs without Python, Homebrew, or the distribution's packages installed.
+# Builds dist/airwaves on macOS or Linux: one file that runs without Python, Homebrew, or the distribution's packages installed.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -35,8 +35,8 @@ fi
 
 mkdir -p build
 # PyInstaller needs a script, not a module, to start from.
-printf 'import sys\nfrom airwaves.sdr import main\nsys.exit(main())\n' > build/sdr_main.py
+printf 'import sys\nfrom airwaves.sdr import main\nsys.exit(main())\n' > build/airwaves_main.py
 
-uv run --with pyinstaller pyinstaller --noconfirm --clean --workpath build/pyinstaller --distpath dist sdr.spec
+uv run --with pyinstaller pyinstaller --noconfirm --clean --workpath build/pyinstaller --distpath dist airwaves.spec
 
-echo "Built dist/sdr"
+echo "Built dist/airwaves"

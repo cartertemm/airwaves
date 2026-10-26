@@ -1,6 +1,6 @@
 {
-	"name": "SDR Tuner",
-	"short_name": "SDR Tuner",
+	"name": "Airwaves",
+	"short_name": "Airwaves",
 	"start_url": ".",
 	"display": "standalone",
 	"background_color": "#0e1216",

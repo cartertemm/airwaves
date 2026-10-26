@@ -4,11 +4,11 @@ If you don't have Python or don't want to worry about the internals, you can [do
 
 This repository contains commands for digitally receiving and getting information about radio stations.
 
-The primary application is `sdr`, a radio receiver that plays AM, shortwave, FM, aviation, and NOAA weather radio from an RTL-SDR USB dongle. The other commands find nearby stations and their stream URLs through online services such as TuneIn and Broadcastify.
+The primary application is `airwaves`, a radio receiver that plays AM, shortwave, FM, aviation, and NOAA weather radio from an RTL-SDR USB dongle. The other commands find nearby stations and their stream URLs through online services such as TuneIn and Broadcastify.
 
 ## Setting up Your RTLSDR
 
-Before `sdr` can use the dongle, the computer needs the right USB driver for it. You only do this once per computer. For more help, see the [RTL-SDR quick start guide](https://www.rtl-sdr.com/rtl-sdr-quick-start-guide/).
+Before `airwaves` can use the dongle, the computer needs the right USB driver for it. You only do this once per computer. For more help, see the [RTL-SDR quick start guide](https://www.rtl-sdr.com/rtl-sdr-quick-start-guide/).
 
 ### Windows
 
@@ -24,19 +24,19 @@ Windows does not include a driver that works with the dongle, so install the Win
 1. Make sure the box to the right of the selected device shows **WinUSB**.
 1. Click **Replace Driver**. If Windows warns about the publisher, click **Install this driver software anyway**.
 
-When Zadig finishes, the dongle is ready to use with `sdr`.
+When Zadig finishes, the dongle is ready to use with `airwaves`.
 
 ### macOS
 
-The macOS download is for Apple silicon and includes everything it needs. Unpack `sdr-macos-arm64.tar.gz` and run `./sdr 97.9` in Terminal. The app is not signed, so the first time, tell macOS to trust it:
+The macOS download is for Apple silicon and includes everything it needs. Unpack `airwaves-macos-arm64.tar.gz` and run `./airwaves 97.9` in Terminal. The app is not signed, so the first time, tell macOS to trust it:
 
 ```
-xattr -d com.apple.quarantine sdr
+xattr -d com.apple.quarantine airwaves
 ```
 
 The rest of this section is for running from this folder.
 
-macOS needs no USB driver for the dongle. To run `sdr` from this folder, install the library that talks to the dongle, and PortAudio for sound, with [Homebrew](https://brew.sh):
+macOS needs no USB driver for the dongle. To run `airwaves` from this folder, install the library that talks to the dongle, and PortAudio for sound, with [Homebrew](https://brew.sh):
 
 ```
 brew install librtlsdr portaudio
@@ -52,9 +52,9 @@ It installs what the build needs with Homebrew and puts `libnrsc5.dylib` in `src
 
 ### Linux
 
-The Linux download is for x86_64 PCs and includes the dongle driver and HD Radio. It needs glibc 2.35 or later, which Ubuntu 22.04, Debian 12, and newer distributions have. Unpack `sdr-linux-x86_64.tar.gz` and run `./sdr 97.9`.
+The Linux download is for x86_64 PCs and includes the dongle driver and HD Radio. It needs glibc 2.35 or later, which Ubuntu 22.04, Debian 12, and newer distributions have. Unpack `airwaves-linux-x86_64.tar.gz` and run `./airwaves 97.9`.
 
-Linux only lets root use the dongle until a udev rule gives other users access. The `rtl-sdr` package installs the rule, along with the dongle driver that `sdr` uses when you run it from this folder:
+Linux only lets root use the dongle until a udev rule gives other users access. The `rtl-sdr` package installs the rule, along with the dongle driver that `airwaves` uses when you run it from this folder:
 
 ```
 sudo apt install rtl-sdr
@@ -62,7 +62,7 @@ sudo apt install rtl-sdr
 
 On other distributions, the package is usually called `rtl-sdr` too. After installing it, unplug the dongle and plug it back in.
 
-Linux may also load a TV driver, `dvb_usb_rtl28xxu`, for the dongle. The Linux download takes the dongle from it by itself. If `sdr` says that this module is using the dongle, unload it and keep it from loading again:
+Linux may also load a TV driver, `dvb_usb_rtl28xxu`, for the dongle. The Linux download takes the dongle from it by itself. If `airwaves` says that this module is using the dongle, unload it and keep it from loading again:
 
 ```
 sudo modprobe -r dvb_usb_rtl28xxu
@@ -91,7 +91,7 @@ The commands need Python 3.10 or later and [uv](https://docs.astral.sh/uv/). In 
 uv sync
 ```
 
-Then run each command with `uv run`, for example `uv run sdr 97.9` or `uv run tunein "jazz"`. Some features need extra packages. The `sonos` and `airplay` extras are for casting to Sonos speakers and AirPlay devices. The `web` extra is for controlling the radio from a browser. To install all of them, run:
+Then run each command with `uv run`, for example `uv run airwaves 97.9` or `uv run tunein "jazz"`. Some features need extra packages. The `sonos` and `airplay` extras are for casting to Sonos speakers and AirPlay devices. The `web` extra is for controlling the radio from a browser. To install all of them, run:
 
 ```
 uv sync --extra sonos --extra airplay --extra web
@@ -107,7 +107,7 @@ uv tool install ".[sonos,airplay,web]"
 
 ### Building a Windows executable
 
-To give the receiver to someone who does not have Python, run `build.bat`. It builds `dist\sdr.exe`, one file that includes Python, the packages, and the dongle driver, with Sonos and AirPlay casting and the web frontend:
+To give the receiver to someone who does not have Python, run `build.bat`. It builds `dist\airwaves.exe`, one file that includes Python, the packages, and the dongle driver, with Sonos and AirPlay casting and the web frontend:
 
 ```
 build.bat
@@ -117,7 +117,7 @@ The other commands are not in the executable.
 
 ### Building a macOS or Linux executable
 
-On an Apple silicon Mac with Homebrew, or on Debian or Ubuntu, run `build.sh`. It builds `dist/sdr`, one file that includes Python, the packages, the dongle driver, and libnrsc5, with Sonos and AirPlay casting and the web frontend. On Linux it builds the dongle driver from source, and the file runs on distributions as old as the one it was built on:
+On an Apple silicon Mac with Homebrew, or on Debian or Ubuntu, run `build.sh`. It builds `dist/airwaves`, one file that includes Python, the packages, the dongle driver, and libnrsc5, with Sonos and AirPlay casting and the web frontend. On Linux it builds the dongle driver from source, and the file runs on distributions as old as the one it was built on:
 
 ```
 ./build.sh
@@ -155,12 +155,12 @@ When tuning to AM frequencies, specify them in MHz. For example, to listen to 14
 Usage:
 
 ```
-uv run sdr
-uv run sdr 97.9
-uv run sdr 1.4
-uv run sdr 9.58
-uv run sdr 127.575
-uv run sdr 162.55
+uv run airwaves
+uv run airwaves 97.9
+uv run airwaves 1.4
+uv run airwaves 9.58
+uv run airwaves 127.575
+uv run airwaves 162.55
 ```
 
 If you have more than one dongle, the script asks you to choose one before it starts playback.
@@ -179,30 +179,30 @@ volume = 80
 3 = 1.4
 ```
 
-The script prints its version when it starts. To only print the version, run `uv run sdr --version` (or `-v`).
+The script prints its version when it starts. To only print the version, run `uv run airwaves --version` (or `-v`).
 
-The script picks US or European band settings from the country in your system settings. this is obtained through the Windows region, or the `LANG` setting on Linux and macOS. If that is not set, it falls back to US. You can override this by invoking `sdr` with `--region us` or `--region eu`:
+The script picks US or European band settings from the country in your system settings. this is obtained through the Windows region, or the `LANG` setting on Linux and macOS. If that is not set, it falls back to US. You can override this by invoking `airwaves` with `--region us` or `--region eu`:
 
 ```
-uv run sdr 97.9 --region eu
+uv run airwaves 97.9 --region eu
 ```
 
 The dongle sets its own gain by default. If strong stations nearby cause noise, or weak stations do not come in, set the gain yourself with `--gain`, in dB from 0 to 50. The dongle uses the closest gain it has. To use a gain every time, add it to `airwaves.conf`, for example `gain = 30`. `--gain auto` uses automatic gain for one run, even when the file has a gain:
 
 ```
-uv run sdr 97.9 --gain 30
+uv run airwaves 97.9 --gain 30
 ```
 
 Most dongles tune a little above or below the frequency you ask for. The error is measured in parts per million (ppm), and on cheap dongles it can be 50 ppm or more, which puts NOAA weather radio about 8 kHz off. Dongles with a TCXO (temperature compensated crystal), such as the RTL-SDR Blog V3 and V4, are usually within 2 ppm and do not need this. To correct the error, give it with `--ppm`, from -200 to 200, or add it to `airwaves.conf`, for example `ppm = 42`. A tool such as `rtl_test -p` or kalibrate-rtl can measure it:
 
 ```
-uv run sdr 162.55 --ppm 42
+uv run airwaves 162.55 --ppm 42
 ```
 
 On weather radio, each alert prints on its own line, for example `ALERT: Tornado Warning until 3:45 PM for 004013`, and stays on the status line until it expires. The numbers are county FIPS codes. To only get alerts for your county, add `--county` with its FIPS code. Alerts for the whole US always show. To keep the sound off until an alert arrives, like a weather radio, add `--alert-mode`:
 
 ```
-uv run sdr 162.55 --county 004013 --alert-mode
+uv run airwaves 162.55 --county 004013 --alert-mode
 ```
 
 Stations send a required weekly test, usually on Wednesday between 11 AM and noon local time. It shows as `ALERT: Required Weekly Test`.
@@ -210,7 +210,7 @@ Stations send a required weekly test, usually on Wednesday between 11 AM and noo
 Press `r` to record what is playing to a file, and `r` again to stop. The file is named by the date, time, and frequency, for example `2026-10-07 14-30-05 97.9MHz.mp3`, and goes in the current folder. Tuning, scanning, HD Radio, and casting do not stop the recording. Pausing leaves a gap, except while casting, when the space key pauses the speaker and the recording continues. Use `--record-format wav` for a WAV file instead of MP3, and `--record-dir` to choose the folder:
 
 ```
-uv run sdr 97.9 --record-format wav --record-dir C:\Radio
+uv run airwaves 97.9 --record-format wav --record-dir C:\Radio
 ```
 
 ### ACARS
@@ -218,7 +218,7 @@ uv run sdr 97.9 --record-format wav --record-dir C:\Radio
 ACARS is a system that aircraft and ground stations use to send short text messages, such as position reports, weather requests, and gate information. Press `a` to decode ACARS, or start with `--acars`:
 
 ```
-uv run sdr --acars
+uv run airwaves --acars
 ```
 
 Each message with text prints as one readable line containing the time, the flight and aircraft registration, where it flies from and to, what kind of message it is, and what it reports. For example, this message:
@@ -239,7 +239,7 @@ If you find a message that is not printed correctly, please open an issue so we 
 To also save the messages to a file, add `--log` with a file name. Each message adds the readable line, then the message as sent on the next line:
 
 ```
-uv run sdr --acars --log flights.log
+uv run airwaves --acars --log flights.log
 ```
 
 While decoding ACARS, `r` appends messages to `flights.log` in the record folder (see `--record-dir`) in the same format, until you press `r` again. If a recording is already running when you enter ACARS mode, `r` stops that recording first.
@@ -296,9 +296,9 @@ Press `c` while the script runs to start or stop casting. It lists the Sonos gro
 To cast from the start, add `--sonos` or `--airplay` and a name. Without a name, the script lists only that kind for you to choose from.
 
 ```
-uv run sdr 97.9 --sonos Kitchen
-uv run sdr 97.9 --airplay Office
-uv run sdr 97.9 --sonos
+uv run airwaves 97.9 --sonos Kitchen
+uv run airwaves 97.9 --airplay Office
+uv run airwaves 97.9 --sonos
 ```
 
 While casting, the computer is silent, and Space, `_`, `+`, and `m` pause, change the volume of, and mute the speakers.
@@ -326,16 +326,16 @@ The first time you cast, Windows or macOS may ask whether Python can use the net
 
 ### Using a browser
 
-`sdr --web` runs the radio with no terminal keyboard controls and serves a page that any browser on your network can use. This is the way to run `sdr` on a computer with no screen, such as a home server or a Raspberry Pi. It needs the `web` extra.
+`airwaves --web` runs the radio with no terminal keyboard controls and serves a page that any browser on your network can use. This is the way to run `airwaves` on a computer with no screen, such as a home server or a Raspberry Pi. It needs the `web` extra.
 
 ```
 uv sync --extra sonos --extra airplay --extra web
-uv run sdr 97.9 --web
+uv run airwaves 97.9 --web
 ```
 
 `uv sync` removes extras that you do not name, so list every one you want.
 
-`sdr` prints the address to open, such as `http://192.168.1.20:8000`. Use `--web 8080` for another port. If the port is in use, `sdr` prints an error and exits.
+`airwaves` prints the address to open, such as `http://192.168.1.20:8000`. Use `--web 8080` for another port. If the port is in use, `airwaves` prints an error and exits.
 
 The page works like a radio's front panel. Every command is a button, and also a key when you use a keyboard. A screen reader, or the browser's own voice, says what changes: the frequency, the station name, messages, and weather alerts. Short sounds play for key presses, while seeking, and at the end of a band. Settings (press S) turn each sound and spoken item on or off. The page speaks through a screen reader. Without one, choose Text to speech under Speech in Settings to hear the browser's voice.
 
@@ -363,7 +363,7 @@ On a phone, open the page and add it to the home screen (in Safari, tap Share, t
 
 Press O, or the Play on button, to choose where the sound plays:
 
-* **Server speakers**: the sound card of the computer running `sdr`. If "server speakers" is not listed, no soundcard was detected. Play, Mute, and the Up and Down keys then change the sound on that computer. Note that the radio starts paused by default.
+* **Server speakers**: the sound card of the computer running `airwaves`. If "server speakers" is not listed, no soundcard was detected. Play, Mute, and the Up and Down keys then change the sound on that computer. Note that the radio starts paused by default.
 * **This browser**: press Play to listen. Play, Mute, and the Up and Down keys then only change this browser. Several browsers can listen at once. On iPhone, iOS does not let a page set the volume. As such the volume slider is hidden unless you are listening on the server speakers or casting to another device on the network.
 * **A Sonos or AirPlay speaker**: press Find Sonos and AirPlay speakers first. Needs the `sonos` or `airplay` extra. The panel shows a volume slider for the speaker.
 
@@ -375,13 +375,13 @@ With more than one dongle, choose one with `--device N`, counting from 1. `--son
 
 ### Using the receiver from another program
 
-`sdr` can also be imported from another program. The receiver does not need the keyboard controls:
+The receiver can also be used from another program. The receiver does not need the keyboard controls:
 
 ```python
-from airwaves import sdr
+import airwaves
 
-devices = sdr.list_devices()
-receiver = sdr.Receiver(devices[0].index, 97.9, region="eu")
+devices = airwaves.list_devices()
+receiver = airwaves.Receiver(devices[0].index, 97.9, region="eu")
 receiver.on_status_change = lambda: print(receiver.rds_name, receiver.rds_text)
 receiver.start()
 receiver.volume = 70
@@ -399,22 +399,22 @@ receiver.stop()
 | `Receiver(device_index, freq_mhz, region=None, gain="auto", ppm=0)` | Opens a dongle. `region` is `"us"` or `"eu"`. Without it, the receiver uses `detect_region()`, which reads the system's country setting. `gain` is `"auto"` or the tuner gain in dB. `ppm` corrects the dongle's frequency error. |
 | `start()`, `stop()` | Start and stop the dongle and audio. |
 | `tune(freq_mhz)`, `freq_mhz` | Change and read the frequency. AM, shortwave, FM, aviation, and NOAA frequencies all work. Other frequencies raise `ValueError`. |
-| `band` | The current band, `sdr.AM`, `sdr.SW`, `sdr.FM`, `sdr.AIR`, or `sdr.NOAA`. While ACARS decodes, it is `sdr.ACARS` or `sdr.ACARS_EU`. |
+| `band` | The current band, `airwaves.AM`, `airwaves.SW`, `airwaves.FM`, `airwaves.AIR`, or `airwaves.NOAA`. While ACARS decodes, it is `airwaves.ACARS` or `airwaves.ACARS_EU`. |
 | `seek(direction)` | Scans up (`1`) or down (`-1`) to the next station in the band and tunes to it. It wraps at the band edges, blocks while scanning (usually under 1 second), and returns the new frequency, or `None` if it found no other station. |
 | `volume` | Volume from 0 to 100. |
 | `paused`, `muted` | Pause or mute the audio. |
 | `stereo` | True when the station sends stereo. |
 | `signal_db` | Signal strength: how far the station is above the noise, in whole dB. |
 | `rds_name`, `rds_text` | The station name and radio text sent with RDS, or empty text. FM stereo stations only. |
-| `hd_start()`, `hd_stop()`, `hd_active` | Start and stop HD Radio on the current FM station. `hd_start()` raises `sdr.HdUnavailable` if libnrsc5 cannot load. It raises `sdr.nrsc5.NRSC5Error` if nrsc5 cannot open the dongle, and analog plays again. While HD is active, `tune()` and `seek()` go back to analog first. |
+| `hd_start()`, `hd_stop()`, `hd_active` | Start and stop HD Radio on the current FM station. `hd_start()` raises `airwaves.HdUnavailable` if libnrsc5 cannot load. It raises `airwaves.nrsc5.NRSC5Error` if nrsc5 cannot open the dongle, and analog plays again. While HD is active, `tune()` and `seek()` go back to analog first. |
 | `hd_locked`, `hd_mer` | Whether HD is locked, and the last digital signal quality as `(lower, upper)` dB. |
 | `hd_programs`, `hd_program`, `select_hd_program(program)`, `hd_program_step(direction)` | The HD channels found, as a dict of program number to name (0 is HD1), the playing channel, how to play another, and the channel after (`1`) or before (`-1`) the playing one (`None` past either end). HD1 plays by itself once its audio arrives. HD can take about 3 seconds to lock, so a program that uses the API should wait for `hd_locked` and go back with `hd_stop()` if it does not lock. While HD is active, `rds_name` is the HD station name and `rds_text` is "artist - title". |
 | `on_status_change` | Called with no arguments when `stereo`, `signal_db`, `rds_name`, `rds_text`, or the HD state changes. It runs on a background thread. |
 | `on_audio` | Called with each block of stereo audio (a float32 numpy array of shape `(frames, 2)` at 48 kHz, before volume and mute) from a background thread. Not called while paused. The `r` key uses it to record. |
 | `acars_start()`, `acars_stop()`, `acars_active` | Start and stop decoding ACARS. `acars_start()` tunes to the region's ACARS channels and plays silence. `acars_stop()` goes back to `freq_mhz`, which `acars_start()` does not change. `tune()` and `seek()` also stop ACARS. |
-| `on_acars` | Called with each decoded ACARS message from a background thread, including messages without text. Each is an `sdr.AcarsMessage` with `time`, `freq_mhz`, `mode`, `registration`, `label`, `block_id`, `flight`, `number`, `text`, and `describe()`. `flight` and `number` are only set on messages from aircraft. `flight_log.describe(message)` (`from airwaves import flight_log`) returns the readable line. |
+| `on_acars` | Called with each decoded ACARS message from a background thread, including messages without text. Each is an `airwaves.AcarsMessage` with `time`, `freq_mhz`, `mode`, `registration`, `label`, `block_id`, `flight`, `number`, `text`, and `describe()`. `flight` and `number` are only set on messages from aircraft. `flight_log.describe(message)` (`from airwaves import flight_log`) returns the readable line. |
 | `county` | A county FIPS code. When set, alerts for other counties are ignored. Alerts for the whole US always show. |
-| `alert`, `on_alert` | The latest weather alert, an `sdr.Alert` with `name`, `event`, `locations`, `issued`, `expires`, and `describe()`. `on_alert` is called with each new alert from a background thread. |
+| `alert`, `on_alert` | The latest weather alert, an `airwaves.Alert` with `name`, `event`, `locations`, `issued`, `expires`, and `describe()`. `on_alert` is called with each new alert from a background thread. |
 | `running`, `error` | `running` becomes false if the dongle fails, and `error` holds the cause. |
 | `has_sound_card` | False when no sound card could be opened. `local_audio` then stays False; cast or use the web frontend instead. |
 
@@ -496,4 +496,4 @@ uv run broadcastify --stream 20973
 
 ## License
 
-GPL version 3 or later, because `sdr` includes libnrsc5. The Windows, macOS, and Linux apps also include the [osmocom rtl-sdr](https://gitea.osmocom.org/sdr/rtl-sdr) dongle driver (GPL version 2 or later). See `LICENSE`.
+GPL version 3 or later, because `airwaves` includes libnrsc5. The Windows, macOS, and Linux apps also include the [osmocom rtl-sdr](https://gitea.osmocom.org/sdr/rtl-sdr) dongle driver (GPL version 2 or later). See `LICENSE`.
