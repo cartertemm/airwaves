@@ -52,7 +52,7 @@ from rtlsdr.rtlsdr import LibUSBError
 
 from . import config, nrsc5
 
-VERSION = "0.3"
+VERSION = "0.3.1"
 VERSION_TEXT = f"SDR Tuner version {VERSION}"
 VOLUME_STEP = 10
 DEFAULT_VOLUME = 50

@@ -1,6 +1,6 @@
 [project]
 name = "airwaves"
-version = "0.3"
+version = "0.3.1"
 description = "A radio receiver for RTL-SDR dongles, and tools that find radio stations and their stream URLs."
 readme = "README.md"
 requires-python = ">=3.10"
