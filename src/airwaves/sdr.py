@@ -1117,7 +1117,7 @@ class Receiver:
 			raise HdUnavailable(error) from error
 		with self.sdr_lock:
 			# Wait for the block being decoded, or its analog audio would play after the fade.
-			self.raw_blocks.join()
+			self.wait_for_demodulate()
 			self.buffer.cut(FADE_FRAMES)
 			self.sdr.close()
 			self.sdr = None
@@ -1349,6 +1349,12 @@ class Receiver:
 					on_audio(audio)
 			self.raw_blocks.task_done()
 
+	def wait_for_demodulate(self):
+		"""Waits until demodulate has finished every queued block, or until the receiver stops, since a demodulate error leaves blocks unfinished."""
+		with self.raw_blocks.all_tasks_done:
+			while self.raw_blocks.unfinished_tasks and self.running:
+				self.raw_blocks.all_tasks_done.wait(QUEUE_TIMEOUT_SECONDS)
+
 	def read_audio(self, frame_count):
 		"""Returns the next frame_count frames of stereo audio, before volume and mute. Use it when local_audio is off."""
 		return self.buffer.get(frame_count) * OUTPUT_LEVEL
@@ -1394,9 +1400,9 @@ class Receiver:
 				if self.sdr is None:
 					return None
 			# Fade out the current station. Wait for the block being decoded first, or it would play after the fade.
-			# A block read before the lock was taken can still be queued after join, so a new tune count makes demodulate drop it.
+			# A block read before the lock was taken can still be queued after the wait, so a new tune count makes demodulate drop it.
 			self.tune_count += 1
-			self.raw_blocks.join()
+			self.wait_for_demodulate()
 			self.buffer.cut(FADE_FRAMES)
 			try:
 				for freq_mhz in channels:

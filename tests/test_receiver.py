@@ -1,4 +1,8 @@
+import threading
+
 from airwaves import sdr
+
+WAIT_TIMEOUT_SECONDS = 5
 
 
 class NoSoundCard:
@@ -66,4 +70,29 @@ def test_receiver_sets_the_ppm_correction(monkeypatch):
 	monkeypatch.setattr(sdr, "RtlSdr", FakeRtlSdr)
 	receiver = sdr.Receiver(0, 97.9, "us", ppm=-42)
 	assert receiver.sdr.freq_correction == -42
+	receiver.stop()
+
+
+class BrokenDemodulator:
+	def __init__(self, band):
+		self.band = band
+
+	def process(self, iq):
+		raise ValueError("bad block")
+
+
+def test_a_demodulate_error_does_not_hang_the_wait_for_queued_blocks(monkeypatch):
+	monkeypatch.setattr(sdr.pyaudio, "PyAudio", NoSoundCard)
+	monkeypatch.setattr(sdr, "RtlSdr", FakeRtlSdr)
+	monkeypatch.setattr(sdr, "Demodulator", BrokenDemodulator)
+	receiver = sdr.Receiver(0, 97.9, "us")
+	receiver.sdr.packed_bytes_to_iq = lambda raw: raw
+	for _ in range(2):
+		receiver.raw_blocks.put((receiver.tune_count, receiver.band, None))
+	threading.Thread(target=receiver.guard, args=(receiver.demodulate,), daemon=True).start()
+	waiter = threading.Thread(target=receiver.wait_for_demodulate, daemon=True)
+	waiter.start()
+	waiter.join(WAIT_TIMEOUT_SECONDS)
+	assert not waiter.is_alive()
+	assert isinstance(receiver.error, ValueError)
 	receiver.stop()
