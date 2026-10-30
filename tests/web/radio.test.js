@@ -218,6 +218,17 @@ test('a lost connection is said once, and its return once', () => {
 	assert.deepEqual(spoken.map(([text]) => text), ['Connection to the radio lost. Reconnecting.', 'Connected to the radio again.'])
 })
 
+test('a status event while connected redraws once', () => {
+	const { radio, handlers } = setUp()
+	handlers.onConnection('open')
+	handlers.onStatus(status())
+	let draws = 0
+	radio.onChange(() => draws++)
+	handlers.onConnection('open')
+	handlers.onStatus(status({ signal_db: 30 }))
+	assert.equal(draws, 1)
+})
+
 test('preset keys before the first status say nothing', () => {
 	const { radio, posts, spoken } = setUp()
 	radio.tunePreset(1)

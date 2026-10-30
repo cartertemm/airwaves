@@ -80,6 +80,7 @@ export function createRadio({ api, player, sfx, speak, storage }) {
 	}
 
 	function receiveConnection(state) {
+		if (state === connection) return
 		if (state === 'open' && connection === 'lost') speak(say.connectionBackLine())
 		if (state === 'lost' && connection !== 'lost') speak(say.connectionLostLine(), true)
 		if (state === 'closed') speak(say.connectionClosedLine(), true)

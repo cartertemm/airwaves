@@ -28,6 +28,12 @@ function setText(node, text) {
 	if (node.textContent !== text) node.textContent = text
 }
 
+function setIcon(slot, name) {
+	if (slot.dataset.icon === name) return
+	slot.dataset.icon = name
+	slot.replaceChildren(icon(name))
+}
+
 export function panelScreen(root, { radio, commands }) {
 	const frequency = el('h1', { class: 'frequency' })
 	const station = el('p', { class: 'station' })
@@ -72,10 +78,10 @@ export function panelScreen(root, { radio, commands }) {
 
 		const playing = radio.isPlaying()
 		play.setAttribute('aria-label', playing ? 'Pause' : 'Play')
-		playIcon.replaceChildren(icon(playing ? 'pause' : 'play'))
+		setIcon(playIcon, playing ? 'pause' : 'play')
 		const muted = radio.isMuted()
 		mute.setAttribute('aria-pressed', String(muted))
-		muteIcon.replaceChildren(icon(muted ? 'mute' : 'sound'))
+		setIcon(muteIcon, muted ? 'mute' : 'sound')
 		volume.hidden = !radio.isCasting()
 		// Never move a slider the user is holding.
 		if (document.activeElement !== volume) volume.value = String(radio.volume())
