@@ -1,44 +1,55 @@
 """Settings kept in airwaves.conf in the current folder."""
 
 import configparser
+import os
 
 FILE_NAME = "airwaves.conf"
+TEMPORARY_NAME = FILE_NAME + ".tmp"
 SECTION = "airwaves"
 PRESETS = "presets"
 
 
-def read():
+class DamagedFile(OSError):
+	"""The file has an error. Saving would drop every setting after it, so the file is left as it is."""
+
+
+def read(strict=False):
+	"""Returns the parser. When the file has an error, the parser holds only the settings above it, or strict raises DamagedFile."""
 	parser = configparser.ConfigParser(interpolation=None)
 	try:
 		parser.read(FILE_NAME, encoding="utf-8")
-	except configparser.Error:
-		pass
+	except configparser.Error as error:
+		if strict:
+			details = " ".join(str(error).split())
+			raise DamagedFile(f"It has an error, so it was left as it is. Fix or delete the line named here: {details}") from error
 	return parser
 
 
-def load(section=SECTION):
-	"""Returns the section. It is empty when the file is missing or unreadable."""
-	parser = read()
+def load(section=SECTION, strict=False):
+	"""Returns the section. It is empty when the file is missing. Pass strict when the section will be saved."""
+	parser = read(strict)
 	if not parser.has_section(section):
 		parser.add_section(section)
 	return parser[section]
 
 
 def write(parser):
-	with open(FILE_NAME, "w", encoding="utf-8") as file:
+	# A crash while writing leaves the old file whole.
+	with open(TEMPORARY_NAME, "w", encoding="utf-8") as file:
 		parser.write(file)
+	os.replace(TEMPORARY_NAME, FILE_NAME)
 
 
 def save(key, value, section=SECTION):
-	"""Writes one setting, keeping the others. Raises OSError when the file cannot be written."""
-	settings = load(section)
+	"""Writes one setting, keeping the others. Raises OSError when the file cannot be written or has an error."""
+	settings = load(section, strict=True)
 	settings[key] = str(value)
 	write(settings.parser)
 
 
 def remove(key, section=SECTION):
-	"""Deletes one setting, keeping the others. Raises OSError when the file cannot be written."""
-	settings = load(section)
+	"""Deletes one setting, keeping the others. Raises OSError when the file cannot be written or has an error."""
+	settings = load(section, strict=True)
 	if key in settings:
 		del settings[key]
 		write(settings.parser)

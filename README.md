@@ -179,6 +179,8 @@ volume = 80
 3 = 1.4
 ```
 
+If the file has an error, such as the same preset number twice, the radio might read only the settings above the error, and it does not save to the file. It shows a message with the line number instead. Fix or delete that line, and saving works again.
+
 The script prints its version when it starts. To only print the version, run `uv run airwaves --version` (or `-v`).
 
 The script picks US or European band settings from the country in your system settings. this is obtained through the Windows region, or the `LANG` setting on Linux and macOS. If that is not set, it falls back to US. You can override this by invoking `airwaves` with `--region us` or `--region eu`:
