@@ -253,8 +253,14 @@ class Radio:
 		self.message(line)
 		entry = f"{line}\n\t{message.describe()}\n"
 		if self.log:
-			self.log.write(entry)
-			self.log.flush()
+			try:
+				self.log.write(entry)
+				self.log.flush()
+			except OSError as error:
+				log, self.log = self.log, None
+				with contextlib.suppress(OSError):
+					log.close()
+				self.message(f"error: Stopped writing the log: {error}")
 		log = self.record_log
 		if log:
 			try:

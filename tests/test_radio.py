@@ -331,3 +331,31 @@ def test_lost_cast_without_sound_card_or_browsers_plays_nothing(receiver):
 	assert radio.caster is None
 	assert radio.browser_stream is None
 	assert messages[-1] == "Sonos: Kitchen stopped playing the radio. This computer has no sound card, so nothing plays."
+
+
+class FullDisk:
+	"""A log file whose writes fail as on a full disk."""
+
+	closed = False
+
+	def write(self, text):
+		raise OSError(28, "No space left on device")
+
+	def flush(self):
+		pass
+
+	def close(self):
+		self.closed = True
+
+
+def test_a_failed_log_write_stops_the_log_not_the_radio(receiver):
+	log = FullDisk()
+	radio = Radio(receiver, log=log)
+	messages, _ = watch(radio)
+	message = sdr.AcarsMessage(131.55, "2", "N123AB", "H1", "1", "HELLO", time=sdr.datetime.now(sdr.timezone.utc))
+	radio.announce_acars(message)
+	radio.announce_acars(message)
+	assert radio.log is None
+	assert log.closed
+	assert len(messages) == 3
+	assert messages[1] == "error: Stopped writing the log: [Errno 28] No space left on device"
