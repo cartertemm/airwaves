@@ -130,8 +130,7 @@ export function createPlayer({ audio, MediaSource = null, fetch = null, URL = nu
 			return
 		}
 		if (!listening || audio.ended) return
-		listening = false
-		token++
+		player.stop()
 		player.onStopped?.('paused')
 	})
 	audio.addEventListener('error', streamStopped)

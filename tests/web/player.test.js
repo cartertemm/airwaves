@@ -217,3 +217,22 @@ test('a fed stream that ends reports stopped, and stop cancels the request', asy
 	await settle()
 	assert.deepEqual(reasons, ['stopped'])
 })
+
+test('the browser pausing a fed stream cancels the request and frees the address', async () => {
+	const audio = fakeAudio()
+	const feed = fakeFeed()
+	const revoked = []
+	feed.URL.revokeObjectURL = address => revoked.push(address)
+	const player = createPlayer({ audio, ...feed })
+	const reasons = []
+	player.onStopped = reason => reasons.push(reason)
+	player.start()
+	feed.sources[0].open()
+	await settle()
+	audio.paused = true
+	audio.fire('pause')
+	assert.equal(feed.requests[0].signal.aborted, true)
+	assert.deepEqual(revoked, ['blob:feed'])
+	assert.equal(audio.src, '')
+	assert.deepEqual(reasons, ['paused'])
+})
