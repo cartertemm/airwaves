@@ -12,14 +12,14 @@ Before `airwaves` can use the dongle, the computer needs the right USB driver fo
 
 ### Windows
 
-Windows does not include a driver that works with the dongle, so install the WinUSB driver with Zadig:
+Windows does not include a driver that works with the dongle. You will have to install the WinUSB driver with Zadig:
 
 1. Plug in the dongle.
 1. Download Zadig from [zadig.akeo.ie](https://zadig.akeo.ie/) and open it.
 1. Press Alt to go to the menu, right arrow over to **Options**, and down arrow to **List All Devices**. If you do not see the dongle in the next step, also clear **Options > Ignore Hubs or Composite Parents**.
 1. In the device list, select **Bulk-In, Interface (Interface 0)**. Some dongles show as **RTL2832U**, **RTL2832UHIDIR**, or **Blog V4** instead. Make sure the USB ID next to the list shows `0BDA 2838 00`. If you are using a screen reader, you may need to use object navigation (NVDA) or the JAWS cursor (JAWS) to reach the device list.
 
-	**Warning:** Do not select any other device. Zadig replaces the driver of the device you select, so a wrong choice can stop your keyboard, mouse, or another device from working.
+	**Warning:** Do not select any other device. Zadig replaces the driver of the device you select, meaning a wrong choice can stop your keyboard, mouse, or another device from working.
 
 1. Make sure the box to the right of the selected device shows **WinUSB**.
 1. Click **Replace Driver**. If Windows warns about the publisher, click **Install this driver software anyway**.
@@ -67,7 +67,7 @@ Then run each command with `uv run`, for example `uv run airwaves 97.9`. Some fe
 uv sync --extra sonos --extra airplay --extra web
 ```
 
-`uv sync` removes extras that you do not name, so list every one you want.
+`uv sync` removes extras that you do not name. List every one you want.
 
 To use the commands from any folder without `uv run`, install them as tools instead:
 
@@ -83,16 +83,16 @@ uv tool install ".[sonos,airplay,web]"
 * Shortwave radio from 2.3 to 14.4 MHz, in 5 kHz channels.
 * FM radio in stereo, with the station name and radio text (often the artist and song) from RDS.
 * HD Radio channels (HD1, HD2, and so on) on FM stations that send them, with the station name, channel names, and the song.
-* The aviation band from 118.000 to 136.975 MHz, in 25 kHz channels. Aircraft and control towers only transmit when someone talks, so you hear static between transmissions.
+* The aviation band from 118.000 to 136.975 MHz, in 25 kHz channels. You will hear static between transmissions because aircraft and control towers only transmit when someone talks.
 * NOAA weather radio from 162.400 to 162.550 MHz, with weather alerts. The script reads the alert codes (SAME) that stations send before each alert, and the 1050 Hz alarm tone.
 * ACARS messages from aircraft, decoded on several channels at once.
 * Scanning up or down to the next station in the band.
 * US and European band settings. In Europe, AM is 531 to 1602 kHz in 9 kHz steps, FM uses 50 microsecond de-emphasis, and there is no NOAA weather radio.
-* The status line and the window title show the frequency, and optionally the signal strength.
+* The status line and the window title show the frequency and optionally the signal strength.
 * Casting to Sonos speakers, with the station and song shown in the Sonos app, or to AirPlay devices.
 * Recording to MP3 or WAV files with one key.
 
-AM and shortwave use the dongle's direct sampling mode. Some dongles need a hardware change before direct sampling picks up anything. Direct sampling stops at 14.4 MHz, so the shortwave bands above that need an upconverter.
+AM and shortwave use the dongle's direct sampling mode. Some dongles need a hardware change before direct sampling picks up anything. Direct sampling stops at 14.4 MHz. Shortwave above 14.4 MHz needs an upconverter.
 
 Shortwave also needs a long wire antenna, ideally placed outside.
 
@@ -115,8 +115,6 @@ uv run airwaves 127.575
 uv run airwaves 162.55
 ```
 
-If you have more than one dongle, the script asks you to choose one before it starts playback.
-
 Press `P` (Shift+P) to save the playing station, or HD channel, to the next free preset number. Press `p` to list the presets and type the number of the one to play, or nothing to cancel. A preset that is outside the bands of the current region shows as not available.
 
 The volume and presets are saved to `airwaves.conf` in the current folder, and used the next time the script starts. The volume is saved each time you change it with `_` or `+`. Speaker volume while casting is not saved. The file looks like this, and you can edit it:
@@ -124,6 +122,8 @@ The volume and presets are saved to `airwaves.conf` in the current folder, and u
 ```
 [airwaves]
 volume = 80
+gain = 30
+ppm = 42
 
 [presets]
 1 = 97.9
@@ -131,41 +131,46 @@ volume = 80
 3 = 1.4
 ```
 
-If the file has an error, such as the same preset number twice, the radio might read only the settings above the error, and it does not save to the file. It shows a message with the line number instead. Fix or delete that line, and saving works again.
+`gain` and `ppm` are optional. They work like `--gain` and `--ppm` below, for every run.
 
-The script prints its version when it starts. To only print the version, run `uv run airwaves --version` (or `-v`).
+If the file has an error, such as the same preset number twice, the radio might read only the settings above the error, and it does not save to the file. It will show a message with the line number instead. Fix or delete that line, and saving works again.
 
-The script picks US or European band settings from the country in your system settings. This is obtained through the Windows region, or the `LANG` setting on Linux and macOS. If that is not set, it falls back to US. You can override this by invoking `airwaves` with `--region us` or `--region eu`:
+### Options
+
+| Option | Purpose |
+| --- | --- |
+| `--region us`, `--region eu` | Use US or European band settings. The default comes from the Windows region, or the `LANG` setting on Linux and macOS. Without either, it is US. |
+| `--gain DB` | Set the tuner gain, from 0 to 50 dB, or `auto`. Try it when strong stations nearby cause noise, or weak stations do not come in. The dongle uses the closest gain it has. The default is `gain` in `airwaves.conf`, or `auto`. |
+| `--ppm PPM` | Correct the dongle's frequency error, from -200 to 200 parts per million. The default is `ppm` in `airwaves.conf`, or 0. |
+| `--device N` | Use the Nth dongle, counting from 1. Without it, `airwaves` asks when you have more than one. |
+| `--county FIPS` | Only show weather alerts for this county FIPS code. Alerts for the whole US always show. |
+| `--alert-mode` | Keep the sound off until a weather alert arrives, like a weather radio. |
+| `--record-format wav` | Record to WAV files. The default is MP3. |
+| `--record-dir FOLDER` | Save recordings and `flights.log` in this folder. The default is the current folder. |
+| `--acars` | Start by decoding ACARS. See ACARS. |
+| `--log FILE` | Add each ACARS message to this file. See ACARS. |
+| `--sonos [SPEAKER]`, `--airplay [DEVICE]` | Start casting. See Casting to Sonos or AirPlay. |
+| `--web [PORT]` | Control the radio from a browser. See Using a browser. |
+| `--web-password PASSWORD` | Ask browsers for this password. |
+| `-v`, `--version` | Print the version and exit. |
+
+For example:
 
 ```
-uv run airwaves 97.9 --region eu
+uv run airwaves 162.55 --county 004013 --alert-mode --ppm 42
 ```
 
-The dongle sets its own gain by default. If strong stations nearby cause noise, or weak stations do not come in, set the gain yourself with `--gain`, in dB from 0 to 50. The dongle uses the closest gain it has. To use a gain every time, add it to `airwaves.conf`, for example `gain = 30`. `--gain auto` uses automatic gain for one run, even when the file has a gain:
+Most dongles tune a little above or below the frequency you ask for. On cheap dongles the error can be 50 ppm or more, which puts NOAA weather radio about 8 kHz off. Dongles with a TCXO (temperature compensated crystal), such as the RTL-SDR Blog V3 and V4, are usually within 2 ppm and do not need `--ppm`. A tool such as `rtl_test -p` or kalibrate-rtl can measure the error.
 
-```
-uv run airwaves 97.9 --gain 30
-```
+### Weather alerts
 
-Most dongles tune a little above or below the frequency you ask for. The error is measured in parts per million (ppm), and on cheap dongles it can be 50 ppm or more, which puts NOAA weather radio about 8 kHz off. Dongles with a TCXO (temperature compensated crystal), such as the RTL-SDR Blog V3 and V4, are usually within 2 ppm and do not need this. To correct the error, give it with `--ppm`, from -200 to 200, or add it to `airwaves.conf`, for example `ppm = 42`. A tool such as `rtl_test -p` or kalibrate-rtl can measure it:
-
-```
-uv run airwaves 162.55 --ppm 42
-```
-
-On weather radio, each alert prints on its own line, for example `ALERT: Tornado Warning until 3:45 PM for 004013`, and stays on the status line until it expires. The numbers are county FIPS codes. To only get alerts for your county, add `--county` with its FIPS code. Alerts for the whole US always show. To keep the sound off until an alert arrives, like a weather radio, add `--alert-mode`:
-
-```
-uv run airwaves 162.55 --county 004013 --alert-mode
-```
+On weather radio, each alert prints on its own line, for example `ALERT: Tornado Warning until 3:45 PM for 004013`, and stays on the status line until it expires. The numbers are county FIPS codes.
 
 Stations send a required weekly test, usually on Wednesday between 11 AM and noon local time. It shows as `ALERT: Required Weekly Test`.
 
-Press `r` to record what is playing to a file, and `r` again to stop. The file is named by the date, time, and frequency, for example `2026-10-07 14-30-05 97.9MHz.mp3`, and goes in the current folder. Tuning, scanning, HD Radio, and casting do not stop the recording. Pausing leaves a gap, except while casting, when the space key pauses the speaker and the recording continues. Use `--record-format wav` for a WAV file instead of MP3, and `--record-dir` to choose the folder:
+### Recording
 
-```
-uv run airwaves 97.9 --record-format wav --record-dir C:\Radio
-```
+Press `r` to record what is playing to a file, and `r` again to stop. The file is named by the date, time, and frequency, for example `2026-10-07 14-30-05 97.9MHz.mp3`. Tuning, scanning, HD Radio, and casting do not stop the recording. Pausing leaves a gap, except while casting, when the space key pauses the speaker and the recording continues.
 
 ### ACARS
 
@@ -246,7 +251,7 @@ When you press `d`, the analog sound stops and the script checks the station for
 
 Casting needs extra packages (see Installing): the `sonos` extra for Sonos, and the `airplay` extra for AirPlay.
 
-Press `c` while the script runs to start or stop casting. It lists the Sonos groups and the AirPlay devices it finds, side by side, for you to choose from. Sonos speakers will show up in both lists because they also support AirPlay.
+Press `c` while the script runs to start or stop casting. It will list the Sonos groups and the AirPlay devices it finds for you to choose from. Sonos speakers will show up in both lists because they also support AirPlay.
 
 To cast from the start, add `--sonos` or `--airplay` and a name. Without a name, the script lists only that kind for you to choose from.
 
@@ -281,7 +286,11 @@ The first time you cast, Windows or macOS may ask whether Python can use the net
 
 ### Using a browser
 
-`airwaves --web` runs the radio with no terminal keyboard controls and serves a page that any browser on your network can use. This is the way to run `airwaves` on a computer with no screen, such as a home server or a Raspberry Pi. It needs the `web` extra (see Installing).
+`airwaves --web` runs the radio with no terminal keyboard controls and serves a page that any browser on your network can use.
+
+This interface is far more user friendly if you aren't fond of the command line. It works equally well on mobile devices, and it lets you run Airwaves on a home server or a Raspberry Pi and listen anywhere.
+
+It needs the `web` extra (see Installing).
 
 ```
 uv run airwaves 97.9 --web
@@ -289,7 +298,9 @@ uv run airwaves 97.9 --web
 
 `airwaves` prints the address to open, such as `http://192.168.1.20:8000`. Use `--web 8080` for another port. If the port is in use, `airwaves` prints an error and exits.
 
-The page works like a radio's front panel. Every command is a button, and also a key when you use a keyboard. A screen reader, or the browser's own voice, says what changes: the frequency, the station name, messages, and weather alerts. Short sounds play for key presses, while seeking, and at the end of a band. Settings (press S) turn each sound and spoken item on or off. The page speaks through a screen reader. Without one, choose Text to speech under Speech in Settings to hear the browser's voice.
+The page works like a radio's front panel. Every command is both a button in the UI and a key when a keyboard is connected.
+
+Short beeps play for key presses, while seeking, and at the end of a band. Settings (press S) turn each sound and spoken item on or off. The page speaks through a screen reader by default. If one is not running and you still want audio announcements, you can turn on Text to speech under Speech in Settings.
 
 | Key | Action |
 | --- | --- |
@@ -300,7 +311,7 @@ The page works like a radio's front panel. Every command is a button, and also a
 | M | Mute or unmute |
 | F | Type a frequency |
 | 1 to 0 | Tune to that preset. 0 is preset 10. |
-| Shift+1 to Shift+0 | Save the station to that preset, replacing what is there |
+| Shift+1 to Shift+0 | Save the station to that preset |
 | B, Shift+B | Next band, previous band |
 | D, Shift+D | Next and previous HD program. The first press checks for HD. |
 | P | Presets. Delete clears the highlighted preset. You can also use the Clear button next to each preset. |
@@ -311,15 +322,13 @@ The page works like a radio's front panel. Every command is a button, and also a
 
 Escape goes back to the front panel from any other screen.
 
-On a phone, open the page and add it to the home screen (in Safari, tap Share, then Add to Home Screen) to use it like an app. When you listen in the browser on an iPhone, set the volume with the phone's buttons.
+On a phone, open the page and add it to the home screen (in Safari, tap Share, then Add to Home Screen) to use it like an app.
 
 Press O, or the Play on button, to choose where the sound plays:
 
 * **Server speakers**: the sound card of the computer running `airwaves`. If "server speakers" is not listed, no soundcard was detected. Play, Mute, and the Up and Down keys then change the sound on that computer. Note that the radio starts paused by default.
 * **This browser**: press Play to listen. Play, Mute, and the Up and Down keys then only change this browser. Several browsers can listen at once. On iPhone, iOS does not let a page set the volume. As such the volume slider is hidden unless you are listening on the server speakers or casting to another device on the network.
 * **A Sonos or AirPlay speaker**: press Find Sonos and AirPlay speakers first. Needs the `sonos` or `airplay` extra. The panel shows a volume slider for the speaker.
-
-The page has no control for ACARS or recording yet. It always shows the signal.
 
 Anyone on your network can open the page. To ask for a password, add `--web-password PASSWORD`. Note that browsers currently send it without encryption. Any username should work.
 
