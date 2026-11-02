@@ -1,6 +1,6 @@
 # Airwaves
 
-If you don't have Python or don't want to worry about the internals, you can [download the Windows, macOS, or Linux app here](https://github.com/cartertemm/airwaves/releases/latest).
+If you don't have Python or don't want to worry about the internals, [download the Windows, macOS, or Linux app](https://github.com/cartertemm/airwaves/releases/latest).
 
 This repository contains commands for digitally receiving and getting information about radio stations.
 
@@ -34,27 +34,11 @@ The macOS download is for Apple silicon and includes everything it needs. Unpack
 xattr -d com.apple.quarantine airwaves
 ```
 
-The rest of this section is for running from this folder.
-
-macOS needs no USB driver for the dongle. To run `airwaves` from this folder, install the library that talks to the dongle, and PortAudio for sound, with [Homebrew](https://brew.sh):
-
-```
-brew install librtlsdr portaudio
-```
-
-HD Radio needs libnrsc5, which Homebrew does not have. To build it, run:
-
-```
-./build-nrsc5.sh
-```
-
-It installs what the build needs with Homebrew and puts `libnrsc5.dylib` in `src/airwaves`. Without it, everything except HD Radio works.
-
 ### Linux
 
 The Linux download is for x86_64 PCs and includes the dongle driver and HD Radio. It needs glibc 2.35 or later, which Ubuntu 22.04, Debian 12, and newer distributions have. Unpack `airwaves-linux-x86_64.tar.gz` and run `./airwaves 97.9`.
 
-Linux only lets root use the dongle until a udev rule gives other users access. The `rtl-sdr` package installs the rule, along with the dongle driver that `airwaves` uses when you run it from this folder:
+Linux only lets root use the dongle until a udev rule gives other users access. The `rtl-sdr` package installs the rule:
 
 ```
 sudo apt install rtl-sdr
@@ -69,23 +53,9 @@ sudo modprobe -r dvb_usb_rtl28xxu
 echo "blacklist dvb_usb_rtl28xxu" | sudo tee /etc/modprobe.d/blacklist-rtl28xxu.conf
 ```
 
-The rest of this section is for running from this folder. PyAudio builds against PortAudio during `uv sync`, so install it and a compiler:
-
-```
-sudo apt install portaudio19-dev build-essential
-```
-
-HD Radio needs libnrsc5. On Debian or Ubuntu, run:
-
-```
-./build-nrsc5.sh
-```
-
-It installs what the build needs with `apt` and puts `libnrsc5.so` in `src/airwaves`. Without it, everything except HD Radio works.
-
 ## Installing
 
-The commands need Python 3.10 or later and [uv](https://docs.astral.sh/uv/). In this folder, run:
+The commands need Python 3.10 or later and [uv](https://docs.astral.sh/uv/). On macOS and Linux, first install the libraries in [docs/building.md](docs/building.md). Then, in this folder, run:
 
 ```
 uv sync
@@ -105,25 +75,7 @@ To use the commands from any folder without `uv run`, install them as tools inst
 uv tool install ".[sonos,airplay,web]"
 ```
 
-### Building a Windows executable
-
-To give the receiver to someone who does not have Python, run `build.bat`. It builds `dist\airwaves.exe`, one file that includes Python, the packages, and the dongle driver, with Sonos and AirPlay casting and the web frontend:
-
-```
-build.bat
-```
-
-The other commands are not in the executable.
-
-### Building a macOS or Linux executable
-
-On an Apple silicon Mac with Homebrew, or on Debian or Ubuntu, run `build.sh`. It builds `dist/airwaves`, one file that includes Python, the packages, the dongle driver, and libnrsc5, with Sonos and AirPlay casting and the web frontend. On Linux it builds the dongle driver from source, and the file runs on distributions as old as the one it was built on:
-
-```
-./build.sh
-```
-
-## SDR Listener
+## Using the radio
 
 ### Features
 
@@ -144,7 +96,7 @@ AM and shortwave use the dongle's direct sampling mode. Some dongles need a hard
 
 Shortwave also needs a long wire antenna, ideally placed outside.
 
-HD Radio uses libnrsc5 from the [nrsc5](https://github.com/theori-io/nrsc5) project, which is included. Because of this, a station will take about 3 seconds to start playing HD1.
+HD Radio uses libnrsc5 from the [nrsc5](https://github.com/theori-io/nrsc5) project, which is included.
 
 ### Running
 
@@ -183,7 +135,7 @@ If the file has an error, such as the same preset number twice, the radio might 
 
 The script prints its version when it starts. To only print the version, run `uv run airwaves --version` (or `-v`).
 
-The script picks US or European band settings from the country in your system settings. this is obtained through the Windows region, or the `LANG` setting on Linux and macOS. If that is not set, it falls back to US. You can override this by invoking `airwaves` with `--region us` or `--region eu`:
+The script picks US or European band settings from the country in your system settings. This is obtained through the Windows region, or the `LANG` setting on Linux and macOS. If that is not set, it falls back to US. You can override this by invoking `airwaves` with `--region us` or `--region eu`:
 
 ```
 uv run airwaves 97.9 --region eu
@@ -235,7 +187,8 @@ prints as:
 22:26: Flight Y4 1747 (XA-VLH) from LAS (Las Vegas) to GDL (Guadalajara), position report, at 36,977 ft near CGZ (Casa Grande), Mach 0.767, fuel 80, ETA 00:45
 ```
 
-The script reads the message type from the label and understands airport pairs (`KLAS/MMGL`), positions, the `/ALT`, `/MCH`, `/FOB`, and `/ETA` fields, the altitude, ETA, and heading in label 16 position reports (`143424,12076,1629, 175,N 33.569,W111.605`), and the altitude and temperature in label 15 position reports (`(2N32514W111584309 68387-50(Z`). Reports from onboard systems (text that starts with `#`) show as position reports (with the waypoints passed and ahead), progress reports, fault reports (with the time, flight phase, fault, and the systems that reported it), flight data reports, and wind forecast requests. A position shows the closest airport. The ETA shows in your local time. Fuel shows the number as sent since airlines use different units. Messages from the ground start with `Ground to` and the registration. ACARS text has no single format, so any text the script does not understand prints after a `|` at the end of the line. Messages without text, such as acknowledgments, do not print.
+Times show in your local time, and a position shows the closest airport. ACARS text has no single format, so any text the script does not understand prints after a `|` at the end of the line. Messages without text, such as acknowledgments, do not print.
+
 If you find a message that is not printed correctly, please open an issue so we can fix it.
 
 To also save the messages to a file, add `--log` with a file name. Each message adds the readable line, then the message as sent on the next line:
@@ -328,14 +281,11 @@ The first time you cast, Windows or macOS may ask whether Python can use the net
 
 ### Using a browser
 
-`airwaves --web` runs the radio with no terminal keyboard controls and serves a page that any browser on your network can use. This is the way to run `airwaves` on a computer with no screen, such as a home server or a Raspberry Pi. It needs the `web` extra.
+`airwaves --web` runs the radio with no terminal keyboard controls and serves a page that any browser on your network can use. This is the way to run `airwaves` on a computer with no screen, such as a home server or a Raspberry Pi. It needs the `web` extra (see Installing).
 
 ```
-uv sync --extra sonos --extra airplay --extra web
 uv run airwaves 97.9 --web
 ```
-
-`uv sync` removes extras that you do not name, so list every one you want.
 
 `airwaves` prints the address to open, such as `http://192.168.1.20:8000`. Use `--web 8080` for another port. If the port is in use, `airwaves` prints an error and exits.
 
@@ -377,50 +327,7 @@ With more than one dongle, choose one with `--device N`, counting from 1. `--son
 
 ### Using the receiver from another program
 
-The receiver can also be used from another program. The receiver does not need the keyboard controls:
-
-```python
-import airwaves
-
-devices = airwaves.list_devices()
-receiver = airwaves.Receiver(devices[0].index, 97.9, region="eu")
-receiver.on_status_change = lambda: print(receiver.rds_name, receiver.rds_text)
-receiver.start()
-receiver.volume = 70
-receiver.tune(98.7)
-receiver.muted = True
-receiver.paused = True
-receiver.hd_start()
-receiver.select_hd_program(1)
-receiver.stop()
-```
-
-| Member | Purpose |
-| --- | --- |
-| `list_devices()` | Returns the connected dongles, each with `index`, `name`, and `serial`. |
-| `Receiver(device_index, freq_mhz, region=None, gain="auto", ppm=0)` | Opens a dongle. `region` is `"us"` or `"eu"`. Without it, the receiver uses `detect_region()`, which reads the system's country setting. `gain` is `"auto"` or the tuner gain in dB. `ppm` corrects the dongle's frequency error. |
-| `start()`, `stop()` | Start and stop the dongle and audio. |
-| `tune(freq_mhz)`, `freq_mhz` | Change and read the frequency. AM, shortwave, FM, aviation, and NOAA frequencies all work. Other frequencies raise `ValueError`. |
-| `band` | The current band, `airwaves.AM`, `airwaves.SW`, `airwaves.FM`, `airwaves.AIR`, or `airwaves.NOAA`. While ACARS decodes, it is `airwaves.ACARS` or `airwaves.ACARS_EU`. |
-| `seek(direction)` | Scans up (`1`) or down (`-1`) to the next station in the band and tunes to it. It wraps at the band edges, blocks while scanning (usually under 1 second), and returns the new frequency, or `None` if it found no other station. |
-| `volume` | Volume from 0 to 100. |
-| `paused`, `muted` | Pause or mute the audio. |
-| `stereo` | True when the station sends stereo. |
-| `signal_db` | Signal strength: how far the station is above the noise, in whole dB. |
-| `rds_name`, `rds_text` | The station name and radio text sent with RDS, or empty text. FM stereo stations only. |
-| `hd_start()`, `hd_stop()`, `hd_active` | Start and stop HD Radio on the current FM station. `hd_start()` raises `airwaves.HdUnavailable` if libnrsc5 cannot load. It raises `airwaves.nrsc5.NRSC5Error` if nrsc5 cannot open the dongle, and analog plays again. While HD is active, `tune()` and `seek()` go back to analog first. |
-| `hd_locked`, `hd_mer` | Whether HD is locked, and the last digital signal quality as `(lower, upper)` dB. |
-| `hd_programs`, `hd_program`, `select_hd_program(program)`, `hd_program_step(direction)` | The HD channels found, as a dict of program number to name (0 is HD1), the playing channel, how to play another, and the channel after (`1`) or before (`-1`) the playing one (`None` past either end). HD1 plays by itself once its audio arrives. HD can take about 3 seconds to lock, so a program that uses the API should wait for `hd_locked` and go back with `hd_stop()` if it does not lock. While HD is active, `rds_name` is the HD station name and `rds_text` is "artist - title". |
-| `on_status_change` | Called with no arguments when `stereo`, `signal_db`, `rds_name`, `rds_text`, or the HD state changes. It runs on a background thread. |
-| `on_audio` | Called with each block of stereo audio (a float32 numpy array of shape `(frames, 2)` at 48 kHz, before volume and mute) from a background thread. Not called while paused. The `r` key uses it to record. |
-| `acars_start()`, `acars_stop()`, `acars_active` | Start and stop decoding ACARS. `acars_start()` tunes to the region's ACARS channels and plays silence. `acars_stop()` goes back to `freq_mhz`, which `acars_start()` does not change. `tune()` and `seek()` also stop ACARS. |
-| `on_acars` | Called with each decoded ACARS message from a background thread, including messages without text. Each is an `airwaves.AcarsMessage` with `time`, `freq_mhz`, `mode`, `registration`, `label`, `block_id`, `flight`, `number`, `text`, and `describe()`. `flight` and `number` are only set on messages from aircraft. `flight_log.describe(message)` (`from airwaves import flight_log`) returns the readable line. |
-| `county` | A county FIPS code. When set, alerts for other counties are ignored. Alerts for the whole US always show. |
-| `alert`, `on_alert` | The latest weather alert, an `airwaves.Alert` with `name`, `event`, `locations`, `issued`, `expires`, and `describe()`. `on_alert` is called with each new alert from a background thread. |
-| `running`, `error` | `running` becomes false if the dongle fails, and `error` holds the cause. |
-| `has_sound_card` | False when no sound card could be opened. `local_audio` then stays False; cast or use the web frontend instead. |
-
-Frontends can use `airwaves.radio.Radio(receiver)` for presets, casting, HD stepping, and alerts. Assign `on_status` and `on_message` to get callbacks, and call `status()` for the current state.
+To use the receiver from your own Python code, see [docs/api.md](docs/api.md).
 
 ## Other commands
 
