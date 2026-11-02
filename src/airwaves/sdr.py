@@ -52,7 +52,7 @@ from rtlsdr.rtlsdr import LibUSBError
 
 from . import config, nrsc5
 
-VERSION = "0.3.1"
+VERSION = "0.4"
 VERSION_TEXT = f"Airwaves version {VERSION}"
 VOLUME_STEP = 10
 DEFAULT_VOLUME = 50
