@@ -4,7 +4,7 @@ If you don't have Python or don't want to worry about the internals, [download t
 
 This repository contains commands for digitally receiving and getting information about radio stations.
 
-The primary application is `airwaves`, a radio receiver that plays AM, shortwave, FM, aviation, and NOAA weather radio from an RTL-SDR USB dongle.
+The primary application is `airwaves`, a radio receiver that plays AM, shortwave, FM, aviation, and NOAA weather radio from an RTL-SDR USB dongle. You can control it from the console or from an intuitive [web interface](#using-a-browser).
 
 ## Setting up Your RTLSDR
 
