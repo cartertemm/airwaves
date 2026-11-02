@@ -4,7 +4,7 @@ If you don't have Python or don't want to worry about the internals, [download t
 
 This repository contains commands for digitally receiving and getting information about radio stations.
 
-The primary application is `airwaves`, a radio receiver that plays AM, shortwave, FM, aviation, and NOAA weather radio from an RTL-SDR USB dongle. The other commands find nearby stations and their stream URLs through online services such as TuneIn and Broadcastify.
+The primary application is `airwaves`, a radio receiver that plays AM, shortwave, FM, aviation, and NOAA weather radio from an RTL-SDR USB dongle.
 
 ## Setting up Your RTLSDR
 
@@ -61,7 +61,7 @@ The commands need Python 3.10 or later and [uv](https://docs.astral.sh/uv/). On 
 uv sync
 ```
 
-Then run each command with `uv run`, for example `uv run airwaves 97.9` or `uv run tunein "jazz"`. Some features need extra packages. The `sonos` and `airplay` extras are for casting to Sonos speakers and AirPlay devices. The `web` extra is for controlling the radio from a browser. To install all of them, run:
+Then run each command with `uv run`, for example `uv run airwaves 97.9`. Some features need extra packages. The `sonos` and `airplay` extras are for casting to Sonos speakers and AirPlay devices. The `web` extra is for controlling the radio from a browser. To install all of them, run:
 
 ```
 uv sync --extra sonos --extra airplay --extra web
