@@ -138,6 +138,8 @@ def describe_position(lat, lon, altitude):
 
 def utc_to_local(hhmm):
 	"""Turns an HHMM time in UTC into HH:MM local time, or returns None if it is not a time."""
+	if not hhmm.isdigit():
+		return None
 	hours, minutes = int(hhmm[:-2] or 0), int(hhmm[-2:])
 	if hours > 23 or minutes > 59:
 		return None
@@ -231,8 +233,9 @@ def describe(message):
 	if waypoints:
 		_, passed, passed_time, _, following, following_time, after, sign, degrees = waypoints.groups()
 		parts.append(f"{'-' if sign == 'M' else ''}{int(degrees)} C")
-		parts.append(f"over {passed} at {utc_to_local(passed_time[:4])}")
-		parts.append(f"next {following} at {utc_to_local(following_time[:4])}" + (f", then {after}" if after else ""))
+		passed_time, following_time = utc_to_local(passed_time[:4]), utc_to_local(following_time[:4])
+		parts.append(f"over {passed}" + (f" at {passed_time}" if passed_time else ""))
+		parts.append(f"next {following}" + (f" at {following_time}" if following_time else "") + (f", then {after}" if after else ""))
 	if report:
 		parts.append(f"heading {int(report.group(4))}")
 	if "MCH" in fields:
